@@ -1,0 +1,26 @@
+[project]
+name = "relay-adapter-realtime-pipecat"
+version = "0.1.0"
+description = "Pipecat SmallWebRTC RealtimeTransport adapter"
+requires-python = ">=3.11"
+dependencies = [
+  "relay-runtime",
+  "relay-adapter-speech-silero",
+  "relay-adapter-speech-deepgram",
+  "pipecat-ai[webrtc,deepgram]>=1.11,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0,<9", "pytest-asyncio>=0.24,<1"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/relay_adapter_realtime_pipecat"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]

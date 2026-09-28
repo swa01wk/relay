@@ -1,0 +1,64 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: relay
+      POSTGRES_DB: relay
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay -d relay"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mortgage-tools:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.mortgage-tools
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.gateway
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      RELAY_GATEWAY_HOST: "0.0.0.0"
+      RELAY_GATEWAY_PORT: "8080"
+      RELAY_DATABASE_URL: "postgresql://relay:relay@postgres:5432/relay"
+      RELAY_REDIS_URL: "redis://redis:6379/0"
+      RELAY_MORTGAGE_TOOLS_URL: "http://mortgage-tools:8090"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mortgage-tools:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 45s

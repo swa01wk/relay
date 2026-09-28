@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install packages
+        run: |
+          pip install -e packages/protocol -e packages/python-sdk -e runtime \
+            -e adapters/realtime/pipecat \
+            -e adapters/models/openai -e adapters/agents/reference \
+            -e adapters/tools/http \
+            -e examples/mortgage-servicing/tools \
+            -e examples/mortgage-servicing/agent \
+            -e adapters/persistence/postgres -e adapters/persistence/redis \
+            -e "services/gateway[dev]"
+      - name: Ruff (syntax / import order via compileall)
+        run: python -m compileall packages/protocol runtime services/gateway
+      - name: Import boundaries (import-linter)
+        run: |
+          pip install import-linter
+          lint-imports
+      - name: Protocol contract tests
+        run: pytest packages/protocol/tests -q
+      - name: Adapter realtime tests
+        run: pytest adapters/realtime/pipecat/tests -q
+      - name: Runtime tests
+        run: pytest runtime/tests -q
+      - name: Gateway tests
+        run: pytest services/gateway/tests -q
+      - name: Phase 10–11 observability & hardening
+        run: pytest runtime/tests/test_phase10_observability.py runtime/tests/test_phase11_hardening.py -q
+
+  layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required top-level paths (PRD §13.2)
+        run: |
+          test -d packages/protocol
+          test -d packages/python-sdk
+          test -d packages/web-sdk
+          test -d runtime
+          test -d adapters
+          test -d services/gateway
+          test -d examples/mortgage-servicing/frontend
+          test -f infra/docker/docker-compose.yml
+
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile || pnpm install
+      - run: pnpm --filter @relay/mortgage-frontend lint
+      - run: pnpm --filter @relay/web-sdk test

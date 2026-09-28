@@ -1,0 +1,14 @@
+[
+  {
+    "id": "CUST-1001",
+    "name": "Rajesh Sharma",
+    "email": "rajesh.sharma@example.com",
+    "mortgages": [
+      {
+        "id": "MORT-2931",
+        "status": "active",
+        "property": "14 Oak Lane, Austin, TX"
+      }
+    ]
+  }
+]

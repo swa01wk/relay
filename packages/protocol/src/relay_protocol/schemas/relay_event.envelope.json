@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relay.dev/schemas/relay_event.envelope.json",
+  "title": "RelayEvent",
+  "type": "object",
+  "required": ["type", "metadata", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "SESSION_STARTED",
+        "SESSION_READY",
+        "SESSION_ENDED",
+        "SESSION_ERROR",
+        "TURN_STARTED",
+        "USER_SPEECH_STARTED",
+        "USER_SPEECH_ENDED",
+        "TURN_PROCESSING",
+        "TURN_COMPLETED",
+        "TRANSCRIPT_DELTA",
+        "TRANSCRIPT_FINAL",
+        "RESPONSE_STARTED",
+        "RESPONSE_DELTA",
+        "RESPONSE_COMPLETED",
+        "RESPONSE_CANCELLED",
+        "SPEECH_STARTED",
+        "SPEECH_PROGRESS",
+        "SPEECH_STOPPED",
+        "INTERRUPTION_DETECTED",
+        "RESPONSE_INTERRUPTED",
+        "HEARD_TEXT_COMMITTED",
+        "TOOL_CALL_STARTED",
+        "TOOL_CALL_PROGRESS",
+        "TOOL_CALL_COMPLETED",
+        "TOOL_CALL_FAILED",
+        "ACTION_REQUESTED",
+        "ACTION_APPLIED",
+        "ACTION_FAILED",
+        "STATE_SNAPSHOT",
+        "STATE_DELTA",
+        "STATE_VERSION_ADVANCED",
+        "STATE_CONFLICT",
+        "ACTIVITY_STARTED",
+        "ACTIVITY_PROGRESS",
+        "ACTIVITY_COMPLETED",
+        "APPROVAL_REQUESTED",
+        "APPROVAL_GRANTED",
+        "APPROVAL_REJECTED",
+        "COMMIT_STARTED",
+        "COMMIT_VERIFIED",
+        "TRACE_LINK",
+        "METRIC",
+        "WARNING",
+        "ERROR"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "event_id",
+        "session_id",
+        "sequence",
+        "timestamp",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": { "type": "string", "minLength": 1 },
+        "event_id": { "type": "string", "minLength": 1 },
+        "session_id": { "type": "string", "minLength": 1 },
+        "conversation_id": { "type": ["string", "null"] },
+        "turn_id": { "type": ["string", "null"] },
+        "response_id": { "type": ["string", "null"] },
+        "tool_call_id": { "type": ["string", "null"] },
+        "trace_id": { "type": ["string", "null"] },
+        "correlation_id": { "type": ["string", "null"] },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "source": { "type": "string", "minLength": 1 },
+        "tenant_id": { "type": ["string", "null"] },
+        "project_id": { "type": ["string", "null"] },
+        "state_version": { "type": ["integer", "null"], "minimum": 0 },
+        "based_on_version": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

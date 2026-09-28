@@ -1,0 +1,39 @@
+[project]
+name = "relay-gateway"
+version = "0.1.0"
+description = "Relay FastAPI gateway"
+requires-python = ">=3.11"
+dependencies = [
+  "relay-runtime",
+  "relay-protocol",
+  "relay-adapter-models-openai",
+  "relay-adapter-agents-reference",
+  "relay-adapter-tools-http",
+  "relay-mortgage-agent",
+  "mortgage-tools-api",
+  "relay-adapter-persistence-postgres",
+  "relay-adapter-persistence-redis",
+  "relay-adapter-realtime-pipecat",
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "httpx>=0.27,<1",
+  "websockets>=13,<16",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0,<9", "pytest-asyncio>=0.24,<1"]
+
+[project.scripts]
+relay-gateway = "relay_gateway.main:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/relay_gateway"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src", "../../examples/mortgage-servicing/tools/src"]

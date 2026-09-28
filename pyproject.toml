@@ -1,0 +1,9 @@
+[tool.importlinter]
+root_packages = ["relay_protocol", "relay_runtime"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Protocol isolated from adapters"
+type = "forbidden"
+source_modules = ["relay_protocol"]
+forbidden_modules = ["pipecat", "langgraph", "openai", "deepgram"]

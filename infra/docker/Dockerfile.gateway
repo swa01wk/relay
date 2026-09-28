@@ -1,0 +1,41 @@
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    libavformat-dev libopus-dev libvpx-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY adapters/realtime/pipecat /app/adapters/realtime/pipecat
+COPY adapters/speech/silero /app/adapters/speech/silero
+COPY adapters/speech/deepgram /app/adapters/speech/deepgram
+COPY adapters/models/openai /app/adapters/models/openai
+COPY adapters/agents/reference /app/adapters/agents/reference
+COPY adapters/tools/http /app/adapters/tools/http
+COPY adapters/persistence/postgres /app/adapters/persistence/postgres
+COPY adapters/persistence/redis /app/adapters/persistence/redis
+COPY examples/mortgage-servicing/agent /app/examples/mortgage-servicing/agent
+COPY examples/mortgage-servicing/tools /app/examples/mortgage-servicing/tools
+COPY packages/protocol /app/packages/protocol
+COPY packages/python-sdk /app/packages/python-sdk
+COPY runtime /app/runtime
+COPY services/gateway /app/services/gateway
+
+RUN pip install --no-cache-dir \
+    -e /app/packages/protocol \
+    -e /app/packages/python-sdk \
+    -e /app/runtime \
+    -e /app/adapters/realtime/pipecat \
+    -e /app/adapters/speech/silero \
+    -e /app/adapters/speech/deepgram \
+    -e /app/adapters/models/openai \
+    -e /app/adapters/agents/reference \
+    -e /app/adapters/tools/http \
+    -e /app/examples/mortgage-servicing/agent \
+    -e /app/examples/mortgage-servicing/tools \
+    -e /app/adapters/persistence/postgres \
+    -e /app/adapters/persistence/redis \
+    -e /app/services/gateway
+
+EXPOSE 8080
+CMD ["relay-gateway"]

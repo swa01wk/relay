@@ -1,0 +1,14 @@
+{
+  "name": "@relay/web-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "test": "node --test src/import-boundary.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
