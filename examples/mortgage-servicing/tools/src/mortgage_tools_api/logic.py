@@ -27,6 +27,10 @@ def search_customer(query: str) -> dict[str, Any]:
     return {"customers": matches}
 
 
+def list_customers(*, limit: int = 50) -> dict[str, Any]:
+    return {"customers": CUSTOMERS[: max(1, limit)], "total": len(CUSTOMERS)}
+
+
 def get_mortgage(mortgage_id: str) -> dict[str, Any]:
     record = MORTGAGES.get(mortgage_id)
     if record is None:

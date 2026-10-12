@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from relay_gateway.deps import shutdown, startup
-from relay_gateway.routes import health, sessions, webrtc, ws
+from relay_gateway.routes import admin, health, metrics, sessions, webrtc, ws
 
 
 def create_app() -> FastAPI:
@@ -17,6 +17,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health.router)
+    app.include_router(metrics.router)
+    app.include_router(admin.router)
     app.include_router(sessions.router)
     app.include_router(webrtc.router)
     app.include_router(ws.router)

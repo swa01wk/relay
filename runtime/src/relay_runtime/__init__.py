@@ -27,8 +27,29 @@ from relay_runtime.state_version_engine import StateApplyOutcome, StateVersionEn
 from relay_runtime.tool_registry import ToolClassification, ToolDefinition, ToolRegistry
 from relay_runtime.trace_manager import TraceManager
 from relay_runtime.turn_manager import TurnManager, TurnPhase, TurnTransitionError
+from relay_runtime.tool_agent import ToolUsingAgent, canvas_instructions
+from relay_runtime.ui_surfaces import (
+    FORM_SUBMISSION_PREFIX,
+    FORM_SUBMIT_EVENT,
+    PRESENT_UI_ACTION,
+    PRESENT_UI_TOOL_NAME,
+    format_form_submission,
+    model_tools_from_registry,
+    present_ui_tool,
+    sanitize_present_ui_arguments,
+)
 
 __all__ = [
+    "ToolUsingAgent",
+    "canvas_instructions",
+    "FORM_SUBMISSION_PREFIX",
+    "FORM_SUBMIT_EVENT",
+    "format_form_submission",
+    "PRESENT_UI_ACTION",
+    "PRESENT_UI_TOOL_NAME",
+    "model_tools_from_registry",
+    "present_ui_tool",
+    "sanitize_present_ui_arguments",
     "ActionRouter",
     "AgentRuntime",
     "ContextManager",

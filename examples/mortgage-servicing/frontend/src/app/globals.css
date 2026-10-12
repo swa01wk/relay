@@ -13,6 +13,12 @@
   --muted-foreground: 215.4 16.3% 46.9%;
   --border: 214.3 31.8% 91.4%;
   --radius: 0.5rem;
+  --chart-1: 221 83% 53%;
+  --chart-2: 160 84% 39%;
+  --chart-3: 38 92% 50%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 0 72% 51%;
+  --chart-6: 190 90% 40%;
 }
 
 body {
@@ -36,4 +42,43 @@ body {
 
 .relay-screen-enter {
   animation: relay-panel-in 0.4s ease-out both;
+}
+
+/* Model-written markdown on the playground canvas (Tailwind preflight strips defaults). */
+.relay-markdown > * + * {
+  margin-top: 0.5rem;
+}
+.relay-markdown h1 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.relay-markdown h2,
+.relay-markdown h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.relay-markdown ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.relay-markdown ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.relay-markdown code {
+  border-radius: 0.25rem;
+  background: hsl(var(--muted));
+  padding: 0 0.25rem;
+}
+.relay-markdown table {
+  border-collapse: collapse;
+}
+.relay-markdown th,
+.relay-markdown td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+.relay-markdown a {
+  text-decoration: underline;
 }

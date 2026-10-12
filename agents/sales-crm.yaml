@@ -1,0 +1,17 @@
+# Sales CRM assistant — a declarative Relay agent (no Python).
+# Loaded by the gateway at startup from $RELAY_AGENTS_DIR. Frontends connect with agentId "sales-crm".
+agent_id: sales-crm
+
+# Tools service: GET /tools (discovery) and POST /tools/{name}. Env vars expand: ${VAR:-default}.
+tools_url: ${RELAY_CRM_TOOLS_URL:-http://localhost:8091}
+
+system_prompt_file: sales-crm.prompt.md
+
+# Optional hints for how results should be shown (added to Relay's built-in present_ui rules).
+instructions: >
+  Good fits: pipeline by stage → bar chart; revenue vs target over months → line or area chart
+  with both series; rep performance → table or bar chart; one deal or account → kv plus an
+  activities table; comparing deals or reps → comparison; account briefings and call prep →
+  markdown.
+
+tool_timeout_seconds: 30

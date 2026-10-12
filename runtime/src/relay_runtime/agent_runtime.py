@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -13,6 +13,7 @@ from relay_protocol import EventType, RelayEvent, RelayEventMetadata, minimal_pa
 from relay_runtime.action_router import ActionRouter
 from relay_runtime.context_manager import ContextManager
 from relay_runtime.model_router import ModelRouter
+from relay_runtime.model_usage import MODEL_USAGE_METRIC, load_prices, usage_details
 from relay_runtime.ports.agent import AgentAdapter
 from relay_runtime.registry_tool_executor import RegistryToolExecutor
 from relay_runtime.observability import STAGE_MODEL, emit_trace_span
@@ -29,6 +30,8 @@ class AgentRuntime:
     model_router: ModelRouter
     agent: AgentAdapter
     tool_executor: RegistryToolExecutor | None = None
+    # USD per 1M tokens by model id (RELAY_MODEL_PRICES); empty → tokens only, no cost.
+    model_prices: dict[str, dict[str, float]] = field(default_factory=load_prices)
 
     async def _assistant_tokens(
         self,
@@ -124,11 +127,39 @@ class AgentRuntime:
                 wait=wait,
             )
 
+        async def request_action_result(
+            name: str, params: dict[str, Any]
+        ) -> tuple[str, dict[str, Any]]:
+            """Ask the client app to run one of its advertised actions; wait for the outcome."""
+            if action_router is None:
+                return "failed", {"reason": "no_client"}
+            return await action_router.request_with_result(
+                publish=publish,
+                metadata=base_metadata().model_copy(update={"turn_id": turn_id, "source": "agent"}),
+                name=name,
+                params=params,
+            )
+
+        async def record_model_usage(chunk: dict[str, Any]) -> None:
+            """Publish one model call's token usage (and cost, when prices are configured)."""
+            details = usage_details(chunk, self.model_prices)
+            await publish(
+                RelayEvent(
+                    type=EventType.METRIC,
+                    metadata=base_metadata().model_copy(update={"turn_id": turn_id, "source": "agent_runtime"}),
+                    payload={"name": MODEL_USAGE_METRIC, "value": details["total_tokens"], "details": details},
+                )
+            )
+
         async def request_hitl_approval(
             tool_name: str,
             arguments: dict[str, Any],
             *,
             summary: str = "",
+            approval_id: str | None = None,
+            verify_tool: str = "",
+            verify_arguments: dict[str, Any] | None = None,
+            followup: bool = False,
         ) -> None:
             event = RelayEvent(
                 type=EventType.APPROVAL_REQUESTED,
@@ -139,6 +170,10 @@ class AgentRuntime:
                     "tool_name": tool_name,
                     "arguments": arguments,
                     "summary": summary,
+                    **({"approval_id": approval_id} if approval_id else {}),
+                    "verify_tool": verify_tool,
+                    "verify_arguments": dict(verify_arguments or {}),
+                    "followup": followup,
                 },
             )
             await emit_event(event)
@@ -172,6 +207,9 @@ class AgentRuntime:
             "live_state": lambda: context.state_summary_for_agent(),
             "live_state_version": lambda: context.state_version,
             "tool_results": context.tool_results_for_agent(),
+            "client_actions": list(context.client_actions),
+            "request_action_result": request_action_result,
+            "record_model_usage": record_model_usage,
             "emit_event": emit_event,
             "request_action": request_action,
             "request_hitl_approval": request_hitl_approval,
@@ -217,8 +255,20 @@ class AgentRuntime:
         ):
             if first_token_at is None:
                 first_token_at = time.perf_counter()
+                ttft_ms = (first_token_at - model_started) * 1000.0
                 if on_metric:
-                    await on_metric("model.ttft_ms", (first_token_at - model_started) * 1000.0)
+                    await on_metric("model.ttft_ms", ttft_ms)
+                else:
+                    # Text turns have no metric callback; record time-to-first-token for them too.
+                    await publish(
+                        RelayEvent(
+                            type=EventType.METRIC,
+                            metadata=base_metadata().model_copy(
+                                update={"turn_id": turn_id, "source": "agent_runtime"}
+                            ),
+                            payload={"name": "model.ttft_ms", "value": ttft_ms},
+                        )
+                    )
             assistant_text += token
             await publish(
                 RelayEvent(

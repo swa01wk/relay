@@ -32,6 +32,7 @@ async def session_websocket(session_id: str, websocket: WebSocket, token: str) -
         await outbound.put(json.dumps(event.model_dump(mode="json")))
 
     unsubscribe = session_manager.event_gateway.subscribe(session_id, on_event)
+    session_manager.client_attached(session_id)
 
     async def pump_outbound() -> None:
         while True:
@@ -49,6 +50,12 @@ async def session_websocket(session_id: str, websocket: WebSocket, token: str) -
             await websocket.send_text(json.dumps({"type": "ERROR", "message": str(exc)}))
         except ValueError as exc:
             await websocket.send_text(json.dumps({"type": "ERROR", "message": str(exc)}))
+
+    async def run_app_event(name: str, payload: dict) -> None:
+        try:
+            await session_manager.submit_client_app_event(session_id, name=name, payload=payload)
+        except KeyError:
+            await websocket.send_text(json.dumps({"type": "ERROR", "message": "session not found"}))
 
     try:
         while True:
@@ -98,10 +105,9 @@ async def session_websocket(session_id: str, websocket: WebSocket, token: str) -
             elif body.get("type") == "APP_EVENT":
                 name = str(body.get("name", "event"))
                 payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
-                try:
-                    await session_manager.submit_client_app_event(session_id, name=name, payload=payload)
-                except KeyError:
-                    await websocket.send_text(json.dumps({"type": "ERROR", "message": "session not found"}))
+                # App events queue behind the in-flight turn; awaiting here would stall the
+                # ACTION_APPLIED / STATE_SNAPSHOT frames that turn is waiting on.
+                asyncio.create_task(run_app_event(name, payload))
             elif body.get("type") == "VOICE_CANCEL":
                 await session_manager.cancel_voice_utterance(session_id)
             elif body.get("type") == "PING":
@@ -110,5 +116,6 @@ async def session_websocket(session_id: str, websocket: WebSocket, token: str) -
         logger.info("websocket disconnected session_id=%s", session_id)
     finally:
         unsubscribe()
+        session_manager.client_detached(session_id)
         await outbound.put(None)
         await pump_task

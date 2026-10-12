@@ -56,14 +56,15 @@ async def test_p11_tc_002_model_timeout_injection(manager_fixture, monkeypatch):
     monkeypatch.setenv("RELAY_INJECT_MODEL_TIMEOUT", "1")
     manager, store = manager_fixture
     session, _ = await manager.create_dev_session(project_id="p", agent_id="a")
-    with pytest.raises(RuntimeError, match="session actor failed"):
-        await manager.submit_user_text(session.session_id, "trigger timeout")
+    await manager.submit_user_text(session.session_id, "trigger timeout")
+    errors = [e for e in store.all_events() if e.type == EventType.SESSION_ERROR]
+    assert errors and errors[-1].payload["code"] == "turn_failed"
+    assert store.all_events()[-1].type == EventType.TURN_COMPLETED
 
+    # The same session recovers once the model is healthy again.
     monkeypatch.delenv("RELAY_INJECT_MODEL_TIMEOUT", raising=False)
-    session2, _ = await manager.create_dev_session(project_id="p", agent_id="a")
-    await manager.submit_user_text(session2.session_id, "recover session")
-    types = [e.type for e in store.all_events()]
-    assert EventType.TURN_COMPLETED in types
+    await manager.submit_user_text(session.session_id, "recover session")
+    assert [e for e in store.all_events() if e.type == EventType.RESPONSE_COMPLETED]
 
 
 @pytest.mark.asyncio

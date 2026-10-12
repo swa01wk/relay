@@ -1,0 +1,88 @@
+# Relay
+
+> Relay is a domain-agnostic platform for realtime voice + text AI agents that drive an application's UI. A browser app uses `@relay/web-sdk` to talk to a FastAPI gateway; the gateway's session runtime runs turns (speech-to-text → agent/LLM + tools → text-to-speech) and emits typed Relay Protocol (RP) events. Agents can render structured UI (tables, charts, forms, …) through a headless `PRESENT_UI` action: the SDK delivers clean data, the host app owns rendering and styling.
+
+Status: proof of concept. Relay is **self-hosted**: the customer runs the gateway image (Docker). Stable: the protocol, the Web SDK client API, UI surface specs, runtime ports, `ToolUsingAgent`, declarative agent manifests (`agents/*.yaml`) with tool discovery (`GET /tools`). Marked *(changing)*: renderers live in each example app (a `@relay/react-ui` package is planned).
+
+**Changing Relay itself? Read [AGENTS.md](AGENTS.md)** (layout, run, targeted tests, architecture rules, known pitfalls and gaps).
+
+**Implementing an integration? Start with [packages/web-sdk/AGENTS.md](packages/web-sdk/AGENTS.md).** It ships inside the SDK package (so it is also at `node_modules/@relay/web-sdk/AGENTS.md` in any app that installs the SDK) and links step-by-step guides with verified templates: [frontend](packages/web-sdk/docs/01-frontend.md), [backend](packages/web-sdk/docs/02-backend.md), [reference](packages/web-sdk/docs/03-reference.md).
+
+Who defines what: **tools** (data operations) are written by the developer on the backend — a tools service in any language (`POST /tools/{name}`) plus JSON-schema descriptions; **tool calls** are decided by the LLM at runtime; the **agent** is a YAML manifest (`agent_id`, tools URL, system prompt) loaded by the gateway — no Python (custom Python agents remain possible via `add_tool_agent`); the **frontend** only uses the SDK, registers UI action handlers and renders surfaces.
+
+Key rules for code that integrates Relay:
+
+- Two connections: a WebSocket (`/ws/sessions/{id}?token=…`) carries every RP event, text, actions and state; optional SmallWebRTC carries audio only. Always `connect()` before `connectVoice()`; there is no WebRTC data channel.
+- Register handlers (`registerAction`, `registerPlaygroundSurfaces`, `on(...)`) before `connect()` so no early event is missed. Sends (`sendText`, `sendState`, `sendEvent`, `submitForm`) work only after `connect()` resolves — `SESSION_READY` arrives before the socket opens, so never send from its handler. The SDK acknowledges every `ACTION_REQUESTED` with `ACTION_APPLIED`/`ACTION_FAILED`; an unregistered action fails with `no_handler_registered`.
+- The SDK never renders. `PRESENT_UI` surfaces arrive as typed data (`UiSurface`); the app maps each `kind` to its own components (shadcn/Tailwind/Recharts in the example).
+- Surface kinds: `table`, `kv`, `cards`, `notice`, `chart` (bar/line/area/pie), `comparison`, `markdown`, `form`. Forms bound to a write tool (`submitTool`) are built from that tool's schema and **saved** on submit (watch `COMMIT_VERIFIED` / `ERROR commit_failed` with `form_id`); unbound forms only send their values to the assistant (`ui.form_submit` → next turn).
+- Side-effecting tools are only *proposed* by the model and run after a human grants approval (`APPROVAL_REQUESTED` → `grantApproval`); the agent then confirms in a follow-up turn.
+- Apps can expose screen actions with `registerAction(name, handler, spec)`; the agent then changes what is already on screen (e.g. filters an existing table) instead of drawing duplicate UI.
+- Handle `SESSION_ERROR` (`code`, `message`; `turn_failed` means a model/tool error and the session keeps working) and track busy state with `TURN_STARTED` / `TURN_COMPLETED`.
+- Never put adapter/framework types (Pipecat, OpenAI, Deepgram) in `packages/protocol` or the Web SDK's public exports; CI enforces this.
+- Keys stay server-side (`infra/docker/.env`); the browser only holds a short-lived session token.
+
+## Web SDK (browser client)
+
+- [packages/web-sdk/src/index.ts](packages/web-sdk/src/index.ts): `createRelaySession({ gatewayUrl, projectId, agentId, transport })` → `connect`, `sendText`, `on(eventType)`, `registerAction`, `sendState`, `onStateConflict`, `sendEvent`, approvals, `connectVoice`/`setMicMuted`
+- [packages/web-sdk/src/ui-surfaces.ts](packages/web-sdk/src/ui-surfaces.ts): `UiSurface` types, `registerPlaygroundSurfaces(session, onPresent)`, `normalizeUiSurface`, `submitForm`, `surfaceToCsv`
+- [packages/web-sdk/src/webrtc-media.ts](packages/web-sdk/src/webrtc-media.ts): SmallWebRTC signaling (offer/ICE over HTTP) and mic/speaker handling
+- [packages/web-sdk/README.md](packages/web-sdk/README.md): short API overview
+
+## Relay Protocol
+
+- [packages/protocol/src/relay_protocol/events.py](packages/protocol/src/relay_protocol/events.py): the event catalog (session, turn, transcript, response, speech, interruption, tools, actions, state, activity, HITL, observability)
+- [packages/protocol/src/relay_protocol/models.py](packages/protocol/src/relay_protocol/models.py): event envelope and metadata (`session_id`, `sequence` from 0, `turn_id`, `trace_id`, …)
+- [packages/protocol/src/relay_protocol/schemas/relay_event.envelope.json](packages/protocol/src/relay_protocol/schemas/relay_event.envelope.json): JSON Schema for the envelope
+
+## Runtime and server
+
+- [runtime/src/relay_runtime/ports](runtime/src/relay_runtime/ports): pluggable interfaces (`RealtimeTransport`, speech-to-text/text-to-speech, `TurnDetector`, `ModelProvider`, `AgentAdapter`, `ToolExecutor`, `EventStore`, `EventPublisher`)
+- [runtime/src/relay_runtime/tool_agent.py](runtime/src/relay_runtime/tool_agent.py): `ToolUsingAgent` — system prompt + read-only tools + `present_ui` + the app's advertised screen actions (`ui_*` tools, preferred over drawing new UI) + side-effecting tools as approval proposals; up to 4 parallel tool rounds; the base for every manifest agent
+- [runtime/src/relay_runtime/hitl_manager.py](runtime/src/relay_runtime/hitl_manager.py): approvals (pending/granted/rejected, optional verify tool, follow-up turns `[Action approved|rejected|failed]`); saved forms are recorded as approvals granted `via: form_submit`
+- [runtime/src/relay_runtime/ui_surfaces.py](runtime/src/relay_runtime/ui_surfaces.py): `present_ui` model tool schema, `sanitize_present_ui_arguments`, `model_tools_from_registry`, form-submission formatting
+- [runtime/src/relay_runtime/session_manager.py](runtime/src/relay_runtime/session_manager.py): one actor queue per session; routes each session to the runtime for its `agent_id`; text and voice turns, barge-in, approvals, turn-failure recovery, idle-session cleanup
+- [runtime/src/relay_runtime/model_usage.py](runtime/src/relay_runtime/model_usage.py): token usage per model call as `METRIC` `model.usage` events; cost from `RELAY_MODEL_PRICES`; session totals in the timeline
+- [runtime/src/relay_runtime/tool_registry.py](runtime/src/relay_runtime/tool_registry.py): tool definitions with JSON schemas and read-only / draft / side-effecting classification
+- [services/gateway/src/relay_gateway](services/gateway/src/relay_gateway): FastAPI routes (`POST /dev/sessions`, `WS /ws/sessions/{id}`, WebRTC offer/ICE, `/dev/sessions/{id}/timeline`); `deps.py` loads `$RELAY_AGENTS_DIR` manifests at startup; `add_tool_agent(agent_id, …)` registers custom Python agents
+- [adapters/observability/prometheus](adapters/observability/prometheus/src/relay_adapter_observability_prometheus/bridge.py) / [adapters/observability/otel](adapters/observability/otel/src/relay_adapter_observability_otel/bridge.py): Prometheus metrics (`GET /metrics`) and OpenTelemetry traces (one trace per session = Relay `trace_id`), both derived from the event stream via a `"*"` subscription; no payload data in spans
+- [services/gateway/src/relay_gateway/logging_setup.py](services/gateway/src/relay_gateway/logging_setup.py): log handler — redacts tokens/keys in every record (incl. access log), `RELAY_LOG_FORMAT=json` for JSON lines with `session_id`/`turn_id`/`agent_id`
+- [services/gateway/src/relay_gateway/routes/admin.py](services/gateway/src/relay_gateway/routes/admin.py): operator API + inspector page (`/admin`, `RELAY_ADMIN_TOKEN`); [runtime/src/relay_runtime/session_audit.py](runtime/src/relay_runtime/session_audit.py) builds session summaries and the approvals/saves audit trail from stored events
+- [runtime/src/relay_runtime/event_redaction.py](runtime/src/relay_runtime/event_redaction.py): what the event log may keep (`RELAY_EVENT_STORE_REDACT=text,data`); retention via `RELAY_EVENT_RETENTION_DAYS`
+- [infra/observability/](infra/observability/alerts.yml): Prometheus scrape config + alert rules, Grafana dashboard; `infra/docker/docker-compose.observability.yml` runs both locally
+- [adapters/README.md](adapters/README.md): which adapter implements which port (Pipecat SmallWebRTC, OpenAI, Deepgram, Silero, Postgres, Redis, HTTP tools)
+- [adapters/realtime/pipecat/ARCHITECTURE.md](adapters/realtime/pipecat/ARCHITECTURE.md): control plane vs media plane
+
+## Reference example: Sales CRM (start here)
+
+- [examples/sales-crm/frontend](examples/sales-crm/frontend): Next.js 16 + shadcn (`dashboard-01` block, charts) on :3002; `components/relay/` holds the SDK provider, assistant panel and shadcn renderers for every surface kind
+- [examples/sales-crm/frontend/components/relay/relay-provider.tsx](examples/sales-crm/frontend/components/relay/relay-provider.tsx): `RelayProvider` / `useRelay()` — session lifecycle, chat, voice, surfaces, errors; `useRelayAction(name, handler, spec)` exposes a screen action; `publishScreenState(key, value)` reports what is visible
+- [examples/sales-crm/frontend/components/deals-table.tsx](examples/sales-crm/frontend/components/deals-table.tsx): screen-action example — `FILTER_DEALS_TABLE` filters the existing table (one pure `filterDeals()` for UI and agent), scrolls/highlights, returns `rows_shown`
+- [examples/sales-crm/frontend/components/relay/surfaces.tsx](examples/sales-crm/frontend/components/relay/surfaces.tsx): shadcn renderers (Table with filter/sort/CSV, Chart, Card, comparison, markdown, Alert, forms)
+- [examples/sales-crm/tools/src/crm_tools_api/tools.py](examples/sales-crm/tools/src/crm_tools_api/tools.py): every tool defined once (function, description, JSON schema, classification) — 10 reads and 7 side-effecting writes (create/update deals, contacts, accounts; log activities; delete deals) — served as `GET /tools` + `POST /tools/{name}` on :8091; data in SQLite ([db.py](examples/sales-crm/tools/src/crm_tools_api/db.py), `CRM_DB_PATH`)
+- [examples/sales-crm/frontend/components/relay/approval-dialog.tsx](examples/sales-crm/frontend/components/relay/approval-dialog.tsx): approval dialog for proposed changes
+- [agents/sales-crm.yaml](agents/sales-crm.yaml): the whole agent — a manifest (`agent_id` `sales-crm`) + [prompt](agents/sales-crm.prompt.md); see [agents/README.md](agents/README.md) for the format
+- [services/gateway/src/relay_gateway/manifests.py](services/gateway/src/relay_gateway/manifests.py): manifest parsing, tool discovery, agent loading at startup
+
+## Reference example: mortgage servicing (custom flows)
+
+- [examples/mortgage-servicing/README.md](examples/mortgage-servicing/README.md): what the demo covers and demo phrases
+- [examples/mortgage-servicing/frontend/src/app/page.tsx](examples/mortgage-servicing/frontend/src/app/page.tsx): full Web SDK integration (session, actions, state, approvals, voice, playground)
+- [examples/mortgage-servicing/frontend/src/components/playground-canvas.tsx](examples/mortgage-servicing/frontend/src/components/playground-canvas.tsx): renderers for every surface kind (filters, sort, CSV, comparison, markdown, forms) *(changing)*
+- [examples/mortgage-servicing/frontend/src/components/playground-chart.tsx](examples/mortgage-servicing/frontend/src/components/playground-chart.tsx): Recharts renderer for chart surfaces *(changing)*
+- [examples/mortgage-servicing/agent/src/relay_mortgage_agent/agent.py](examples/mortgage-servicing/agent/src/relay_mortgage_agent/agent.py): custom agent — deterministic routes, draft/approval/commit flow, falling back to `ToolUsingAgent` for open questions
+- [examples/mortgage-servicing/agent/src/relay_mortgage_agent/tool_definitions.py](examples/mortgage-servicing/agent/src/relay_mortgage_agent/tool_definitions.py): how a domain registers its tools
+
+## Running it
+
+- [README.md](README.md): repository layout, Docker Compose quick start (gateway :8080, mortgage tools :8090, CRM tools :8091, mortgage UI :3000, CRM UI :3002), test commands
+- [packages/web-sdk/docs/03-reference.md](packages/web-sdk/docs/03-reference.md): every gateway endpoint, event, error code, surface spec and **configuration variable** (with defaults)
+- [agents/README.md](agents/README.md): agent manifest format
+
+## Optional
+
+- [plans/VOICE_LIFECYCLE.md](plans/VOICE_LIFECYCLE.md): voice turn lifecycle, endpointing and interruption
+- [plans/DECISIONS.md](plans/DECISIONS.md): accepted design decisions and why
+- [plans/STATUS.md](plans/STATUS.md): implementation status by phase
+- [plans/POST_POC_BOUNDARIES.md](plans/POST_POC_BOUNDARIES.md): explicit non-goals and the post-POC roadmap
+- [plans/GUARDRAILS_AND_SANITIZATION.md](plans/GUARDRAILS_AND_SANITIZATION.md): keeping internal details out of user-facing replies

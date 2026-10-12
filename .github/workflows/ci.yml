@@ -15,13 +15,16 @@ jobs:
           python-version: "3.12"
       - name: Install packages
         run: |
-          pip install -e packages/protocol -e packages/python-sdk -e runtime \
+          pip install -e "packages/protocol[dev]" -e packages/python-sdk -e runtime \
             -e adapters/realtime/pipecat \
             -e adapters/models/openai -e adapters/agents/reference \
             -e adapters/tools/http \
+            -e adapters/persistence/postgres -e adapters/persistence/redis \
+            -e adapters/speech/silero -e adapters/speech/deepgram \
+            -e adapters/observability/prometheus -e adapters/observability/otel \
             -e examples/mortgage-servicing/tools \
             -e examples/mortgage-servicing/agent \
-            -e adapters/persistence/postgres -e adapters/persistence/redis \
+            -e examples/sales-crm/tools \
             -e "services/gateway[dev]"
       - name: Ruff (syntax / import order via compileall)
         run: python -m compileall packages/protocol runtime services/gateway
@@ -33,6 +36,8 @@ jobs:
         run: pytest packages/protocol/tests -q
       - name: Adapter realtime tests
         run: pytest adapters/realtime/pipecat/tests -q
+      - name: Observability adapter tests (Prometheus metrics, OpenTelemetry traces)
+        run: pytest adapters/observability -q
       - name: Runtime tests
         run: pytest runtime/tests -q
       - name: Gateway tests

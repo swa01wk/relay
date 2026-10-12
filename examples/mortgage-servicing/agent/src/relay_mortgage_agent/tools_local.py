@@ -33,6 +33,8 @@ class LocalMortgageToolExecutor(ToolExecutor):
 
         if tool_name == "search_customer":
             return logic.search_customer(str(arguments.get("query", "")))
+        if tool_name == "list_customers":
+            return logic.list_customers(limit=int(arguments.get("limit") or 50))
         if tool_name == "get_mortgage":
             return logic.get_mortgage(str(arguments.get("mortgage_id", "")))
         if tool_name == "get_payments":

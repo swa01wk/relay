@@ -4,13 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createRelaySession,
   fetchHealth,
+  registerPlaygroundSurfaces,
+  submitForm,
   type RelayConnectionState,
   type RelayEventEnvelope,
+  type UiSurface,
   type VoiceConnectionState,
 } from "@relay/web-sdk";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { applyPresentUi, PlaygroundCanvas } from "@/components/playground-canvas";
 import {
   initialMortgageUiState,
   recalculateDraftForEffectiveDate,
@@ -64,6 +68,7 @@ export default function HomePage() {
     toolName: string;
   } | null>(null);
   const [commitVerified, setCommitVerified] = useState<string | null>(null);
+  const [surfaces, setSurfaces] = useState<UiSurface[]>([]);
   const sessionRef = useRef<ReturnType<typeof createRelaySession> | null>(null);
   const assistantBufferRef = useRef<{ id: string; text: string } | null>(null);
   const voiceStateRef = useRef<VoiceConnectionState>("disconnected");
@@ -170,6 +175,9 @@ export default function HomePage() {
           publishUiState(next);
           session.sendEvent("ui.rate_history", { mortgage_id: mortgageId, count: rates.length });
         }),
+        registerPlaygroundSurfaces(session, (params) => {
+          setSurfaces((current) => applyPresentUi(current, params));
+        }),
       ];
     },
     [publishUiState],
@@ -201,6 +209,7 @@ export default function HomePage() {
     setStateConflict(null);
     setPendingApproval(null);
     setCommitVerified(null);
+    setSurfaces([]);
     publishUiState(initialMortgageUiState());
     sessionRef.current?.disconnect();
     const session = createRelaySession({
@@ -637,6 +646,12 @@ export default function HomePage() {
                 </ul>
               )}
             </div>
+            <PlaygroundCanvas
+              surfaces={surfaces}
+              onSubmitForm={(form, values) => {
+                if (sessionRef.current) submitForm(sessionRef.current, form, values);
+              }}
+            />
             <div
               className="relay-panel-enter rounded-md border p-3 transition-shadow duration-300 hover:shadow-sm md:col-span-2"
               data-testid="shared-state-panel"

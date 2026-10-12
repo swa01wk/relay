@@ -17,7 +17,12 @@ class ModelProvider(ABC):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Stream model output chunks (tokens, tool calls, etc.)."""
+        """Stream model output chunks.
+
+        ``{"type": "token", "text"}`` for text, at most one ``{"type": "tool_calls", "calls":
+        [{"id", "name", "arguments"}]}``, and optionally one ``{"type": "usage", "model",
+        "input_tokens", "output_tokens", "cached_input_tokens"}`` (see ``relay_runtime.model_usage``).
+        """
 
     @abstractmethod
     async def cancel(self, session_id: str) -> None:

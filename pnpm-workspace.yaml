@@ -1,3 +1,4 @@
 packages:
   - "packages/web-sdk"
   - "examples/mortgage-servicing/frontend"
+  - "examples/sales-crm/frontend"

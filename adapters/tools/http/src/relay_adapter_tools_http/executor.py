@@ -15,6 +15,18 @@ class HttpToolExecutor(ToolExecutor):
     def __init__(self, *, base_url: str, timeout_seconds: float = 30.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout_seconds
+        # Pooled keep-alive client; parallel tool calls share connections.
+        self._client: httpx.AsyncClient | None = None
+
+    def _http(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self._timeout)
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     async def execute(
         self,
@@ -34,14 +46,14 @@ class HttpToolExecutor(ToolExecutor):
                 os.environ.get("MORTGAGE_COMMIT_TOKEN", "dev-mortgage-commit"),
             )
         timeout = inject_tool_timeout_seconds(self._timeout)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{self._base_url}/tools/{tool_name}",
-                json=arguments,
-                headers=headers,
-            )
-            response.raise_for_status()
-            body = response.json()
-            if isinstance(body, dict):
-                return body
-            return {"result": body}
+        response = await self._http().post(
+            f"{self._base_url}/tools/{tool_name}",
+            json=arguments,
+            headers=headers,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        body = response.json()
+        if isinstance(body, dict):
+            return body
+        return {"result": body}

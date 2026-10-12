@@ -78,6 +78,13 @@ def _build_manager(transport: RecordingTransport) -> tuple[SessionManager, Memor
     return manager, store
 
 
+async def _await_voice_response(manager: SessionManager, session_id: str) -> None:
+    """Voice turns run as a background task after the utterance commits."""
+    rec = manager.get(session_id)
+    if rec and rec.voice_response_task is not None:
+        await rec.voice_response_task
+
+
 @pytest_asyncio.fixture
 async def voice_tts_fixture():
     transport = RecordingTransport()
@@ -95,6 +102,7 @@ async def test_p04_voice_turn_emits_speech_and_pcm(voice_tts_fixture):
     await manager.notify_voice_speech_started(session.session_id)
     await manager.notify_voice_speech_ended(session.session_id)
     await manager.notify_voice_transcript_final(session.session_id, "hello")
+    await _await_voice_response(manager, session.session_id)
 
     types = [e.type for e in store.all_events()]
     assert EventType.SPEECH_STARTED in types
@@ -114,6 +122,7 @@ async def test_p04_tc_004_latency_metrics_logged(voice_tts_fixture):
     await manager.notify_voice_speech_started(session.session_id)
     await manager.notify_voice_speech_ended(session.session_id)
     await manager.notify_voice_transcript_final(session.session_id, "hello")
+    await _await_voice_response(manager, session.session_id)
 
     metrics = {
         e.payload.get("name")
@@ -141,6 +150,7 @@ async def test_p04_tc_003_cancel_agent_playback(voice_tts_fixture):
     await asyncio.sleep(0.12)
     await manager.cancel_agent_playback(session.session_id)
     await final_task
+    await _await_voice_response(manager, session.session_id)
 
     types = [e.type for e in store.all_events()]
     assert EventType.SPEECH_STARTED in types

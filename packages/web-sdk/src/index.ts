@@ -6,6 +6,35 @@ import {
   type VoiceConnectionState,
 } from "./webrtc-media";
 
+export {
+  FORM_SUBMIT_EVENT,
+  PRESENT_UI_ACTION,
+  SHOW_TABLE_ACTION,
+  normalizeChartSurface,
+  normalizePresentUiParams,
+  normalizeTableSurface,
+  normalizeUiSurface,
+  registerPlaygroundSurfaces,
+  submitForm,
+  surfaceToCsv,
+} from "./ui-surfaces";
+export type {
+  PresentUiParams,
+  UiCardsSurface,
+  UiChartSurface,
+  UiChartType,
+  UiComparisonSurface,
+  UiFormField,
+  UiFormFieldType,
+  UiFormSurface,
+  UiMarkdownSurface,
+  UiKeyValueSurface,
+  UiNoticeSurface,
+  UiSurface,
+  UiTableColumn,
+  UiTableSurface,
+} from "./ui-surfaces";
+
 export type RelayConnectionState = "disconnected" | "connecting" | "ready" | "error";
 
 export type RelayTransportMode = "text-only" | "small-webrtc";
@@ -35,10 +64,22 @@ export type RelaySessionOptions = {
   iceServers?: RTCIceServer[];
 };
 
+/** Return an object to report it back to the agent (e.g. `{ rows_shown: 23 }`). Throw to fail. */
 export type ActionHandler = (
   params: Record<string, unknown>,
   ctx: { actionId: string; name: string },
-) => void | Promise<void>;
+) => void | Record<string, unknown> | Promise<void | Record<string, unknown>>;
+
+/** Describes an action so the agent can call it to change what the user sees. */
+export type ActionSpec = {
+  /** What the action does, written for the AI (e.g. "Filter the deals table on the dashboard"). */
+  description: string;
+  /** JSON Schema for the params: `{ type: "object", properties: {...}, required?: [...] }`. */
+  parameters?: Record<string, unknown>;
+};
+
+/** APP_EVENT that advertises spec'd actions to the agent. */
+export const CLIENT_CAPABILITIES_EVENT = "ui.capabilities";
 
 export type SendStateOptions = {
   /** Version the client read before this edit (defaults to last server version). */
@@ -66,7 +107,8 @@ export type RelaySession = {
   setMicMuted: (muted: boolean) => void;
   cancelVoiceUtterance: () => void;
   sendText: (text: string) => void;
-  registerAction: (name: string, handler: ActionHandler) => () => void;
+  /** With `spec`, the agent is told about the action and may call it ("change the screen"). */
+  registerAction: (name: string, handler: ActionHandler, spec?: ActionSpec) => () => void;
   sendState: (state: Record<string, unknown>, options?: SendStateOptions) => void;
   onStateConflict: (handler: (info: StateConflictInfo) => void) => () => void;
   sendEvent: (name: string, payload?: Record<string, unknown>) => void;
@@ -126,6 +168,7 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
   let voice: SmallWebRtcSession | null = null;
   const typeHandlers = new Map<string, Set<(event: RelayEventEnvelope) => void>>();
   const actionHandlers = new Map<string, ActionHandler>();
+  const actionSpecs = new Map<string, ActionSpec>();
   const stateHandlers = new Set<(state: RelayConnectionState) => void>();
   const voiceStateHandlers = new Set<(state: VoiceConnectionState) => void>();
   const audioLevelHandlers = new Set<(level: number) => void>();
@@ -180,12 +223,14 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
       return;
     }
     try {
-      await handler(params, { actionId, name });
+      const returned = await handler(params, { actionId, name });
+      const result =
+        returned && typeof returned === "object" && !Array.isArray(returned) ? returned : { ok: true };
       sendJson({
         type: "ACTION_APPLIED",
         action: name,
         action_id: actionId,
-        result: { ok: true },
+        result,
       });
     } catch (err) {
       sendJson({
@@ -221,6 +266,15 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
     }
   };
 
+  /** App handlers must never break the session (connect, event stream): log and continue. */
+  const safely = (handler: (event: RelayEventEnvelope) => void, event: RelayEventEnvelope) => {
+    try {
+      handler(event);
+    } catch (err) {
+      console.error(`relay: handler for ${event.type} threw`, err);
+    }
+  };
+
   const emit = (event: RelayEventEnvelope) => {
     if (event.type === "STATE_VERSION_ADVANCED") {
       noteServerStateVersion(event.payload.state_version);
@@ -237,7 +291,7 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
     }
     const handlers = typeHandlers.get(event.type);
     if (handlers) {
-      for (const handler of handlers) handler(event);
+      for (const handler of handlers) safely(handler, event);
     }
     if (event.type === "ACTION_REQUESTED") {
       void handleActionRequested(event);
@@ -245,13 +299,13 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
     if (event.type === "APPROVAL_REQUESTED") {
       const approvalHandlers = typeHandlers.get("approval_requested");
       if (approvalHandlers) {
-        for (const handler of approvalHandlers) handler(event);
+        for (const handler of approvalHandlers) safely(handler, event);
       }
     }
     if (event.type === "TRANSCRIPT_FINAL") {
       const transcriptHandlers = typeHandlers.get("transcript");
       if (transcriptHandlers) {
-        for (const handler of transcriptHandlers) handler(event);
+        for (const handler of transcriptHandlers) safely(handler, event);
       }
     }
     if (event.type === "SPEECH_STARTED") {
@@ -341,6 +395,7 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
         setState("disconnected");
         void voice?.disconnect();
       };
+      advertiseActions(); // actions registered before connect()
       setState("ready");
     } catch (e) {
       setState("error");
@@ -386,9 +441,29 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
     sendJson({ type: "USER_TEXT", text });
   };
 
-  const registerAction = (name: string, handler: ActionHandler) => {
+  const advertiseActions = () => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    const actions = [...actionSpecs].map(([name, spec]) => ({
+      name,
+      description: spec.description,
+      parameters: spec.parameters ?? { type: "object", properties: {} },
+    }));
+    socket.send(JSON.stringify({ type: "APP_EVENT", name: CLIENT_CAPABILITIES_EVENT, payload: { actions } }));
+  };
+
+  const registerAction = (name: string, handler: ActionHandler, spec?: ActionSpec) => {
     actionHandlers.set(name, handler);
-    return () => actionHandlers.delete(name);
+    if (spec) {
+      actionSpecs.set(name, spec);
+      advertiseActions();
+    }
+    return () => {
+      if (actionHandlers.get(name) === handler) actionHandlers.delete(name);
+      if (spec && actionSpecs.get(name) === spec) {
+        actionSpecs.delete(name);
+        advertiseActions();
+      }
+    };
   };
 
   const sendState = (state: Record<string, unknown>, options?: SendStateOptions) => {

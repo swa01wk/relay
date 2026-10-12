@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, HTTPException
 
-from relay_gateway.deps import event_store, session_manager
+from relay_gateway.deps import event_gateway, event_store, session_manager
 from relay_runtime.session_timeline import build_session_timeline
 
 router = APIRouter(prefix="/dev", tags=["dev-sessions"])
@@ -57,5 +57,6 @@ async def get_session_timeline(session_id: str, token: str) -> dict:
     """Ordered RP events + metrics/spans waterfall (Phase 10)."""
     if not session_manager.validate_dev_token(session_id, token):
         raise HTTPException(status_code=401, detail="invalid or expired dev token")
+    await event_gateway.flush()
     events = await event_store.list_for_session(session_id)
     return build_session_timeline(events)

@@ -124,7 +124,6 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
     if (!remoteAudio) {
       remoteAudio = document.createElement("audio");
       remoteAudio.autoplay = true;
-      remoteAudio.playsInline = true;
       remoteAudio.setAttribute("playsinline", "true");
       document.body.appendChild(remoteAudio);
     }

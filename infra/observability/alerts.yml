@@ -1,0 +1,70 @@
+# Alert rules for a Relay gateway. Thresholds are starting points — tune them to your traffic.
+groups:
+  - name: relay
+    rules:
+      - alert: RelayGatewayDown
+        expr: up{job="relay-gateway"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: Relay gateway is not answering metric scrapes
+          description: No assistant sessions can start while the gateway is down.
+
+      - alert: RelayTurnsFailing
+        expr: |
+          sum(rate(relay_turns_total{outcome="failed"}[5m]))
+            / sum(rate(relay_turns_total[5m])) > 0.05
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: More than 5% of assistant turns are failing
+          description: Usually the model provider (bad key, rate limit, outage). Check relay_session_errors_total and the gateway log for "turn failed".
+
+      - alert: RelayToolFailing
+        expr: |
+          sum by (tool) (rate(relay_tool_calls_total{outcome="failed"}[10m]))
+            / sum by (tool) (rate(relay_tool_calls_total[10m])) > 0.10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 'Tool {{ $labels.tool }} is failing more than 10% of calls'
+          description: The fault is in the tools service that implements this tool, not in Relay.
+
+      - alert: RelayToolSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le, tool) (rate(relay_tool_duration_seconds_bucket[10m]))) > 4
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 'Tool {{ $labels.tool }} takes more than 4 s (95th percentile)'
+
+      - alert: RelayTurnsSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(relay_turn_duration_seconds_bucket[10m]))) > 16
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Assistant turns take more than 16 s (95th percentile)
+          description: Compare relay_model_ttft_seconds (model) with relay_tool_duration_seconds (tools) to find the slow part.
+
+      - alert: RelayVoiceResponseSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(relay_voice_response_seconds_bucket[10m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Voice replies start more than 2 s after the user stops speaking (95th percentile)
+
+      - alert: RelaySavesFailing
+        expr: sum by (tool) (increase(relay_commits_total{outcome!="saved"}[15m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: 'Approved changes are not being saved ({{ $labels.tool }})'
+          description: A user approved a change or submitted a form and the save failed or could not be verified. See the audit trail at /admin.
+
+      - alert: RelayModelCostHigh
+        expr: sum(increase(relay_model_cost_usd_total[1h])) > 10
+        labels: { severity: warning }
+        annotations:
+          summary: Model spend exceeded 10 USD in the last hour
+          description: Needs RELAY_MODEL_PRICES on the gateway. Adjust the threshold to your budget.

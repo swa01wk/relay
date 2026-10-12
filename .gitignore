@@ -30,3 +30,6 @@ examples/mortgage-servicing/frontend/out/
 .vscode/
 *.swp
 .DS_Store
+
+# Sales CRM example database (SQLite)
+crm.db

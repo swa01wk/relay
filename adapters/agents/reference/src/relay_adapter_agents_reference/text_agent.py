@@ -53,7 +53,12 @@ class ReferenceTextAgent(AgentAdapter):
             messages.append({"role": item["role"], "content": item["content"]})
 
         provider = self._model_router.get_provider()
+        record_usage = context.get("record_model_usage")
         async for chunk in provider.stream_completion(session_id, messages=messages):
+            if chunk.get("type") == "usage":
+                if record_usage is not None:
+                    await record_usage(chunk)
+                continue
             token = str(chunk.get("text", ""))
             if token:
                 yield token

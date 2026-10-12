@@ -16,6 +16,10 @@ class SearchCustomerRequest(BaseModel):
     query: str = Field(min_length=1)
 
 
+class ListCustomersRequest(BaseModel):
+    limit: int = Field(default=50, ge=1, le=200)
+
+
 class GetMortgageRequest(BaseModel):
     mortgage_id: str = Field(min_length=1)
 
@@ -73,6 +77,11 @@ async def health() -> dict[str, str]:
 @app.post("/tools/search_customer")
 async def search_customer(body: SearchCustomerRequest) -> dict[str, Any]:
     return logic.search_customer(body.query)
+
+
+@app.post("/tools/list_customers")
+async def list_customers(body: ListCustomersRequest) -> dict[str, Any]:
+    return logic.list_customers(limit=body.limit)
 
 
 @app.post("/tools/get_mortgage")

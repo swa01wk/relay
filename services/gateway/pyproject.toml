@@ -14,10 +14,13 @@ dependencies = [
   "relay-adapter-persistence-postgres",
   "relay-adapter-persistence-redis",
   "relay-adapter-realtime-pipecat",
+  "relay-adapter-observability-prometheus",
+  "relay-adapter-observability-otel",
   "fastapi>=0.115,<1",
   "uvicorn[standard]>=0.30,<1",
   "httpx>=0.27,<1",
   "websockets>=13,<16",
+  "pyyaml>=6,<7",
 ]
 
 [project.optional-dependencies]

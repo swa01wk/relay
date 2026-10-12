@@ -1,21 +1,20 @@
 import { test, expect } from "@playwright/test";
 
+import { connectSession, openRajeshCase } from "./helpers";
+
 test.describe("Phase 9 — HITL commit + verify", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Connect" }).click();
-    await expect(page.getByText("Session ready.")).toBeVisible({ timeout: 15_000 });
+    await connectSession(page);
   });
 
   test("P09-TC-001 — approve correction updates draft status", async ({ page }) => {
-    await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill("Find Rajesh Sharma");
-    await page.getByRole("button", { name: "Send" }).click();
+    await openRajeshCase(page);
     await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill("Prepare correction draft");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByTestId("correction-draft-view")).toBeVisible({ timeout: 30_000 });
 
     await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill("Submit for approval");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByTestId("approval-modal")).toBeVisible({ timeout: 30_000 });
 
     await page.getByTestId("approval-approve-btn").click();
@@ -24,14 +23,13 @@ test.describe("Phase 9 — HITL commit + verify", () => {
   });
 
   test("P09-TC-004 — verify after commit matches authoritative case view", async ({ page }) => {
-    await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill("Find Rajesh Sharma");
-    await page.getByRole("button", { name: "Send" }).click();
+    await openRajeshCase(page);
     await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill("Prepare correction draft");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByTestId("correction-draft-view")).toBeVisible({ timeout: 30_000 });
 
     await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill("Submit for approval");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByTestId("approval-modal")).toBeVisible({ timeout: 30_000 });
     await page.getByTestId("approval-approve-btn").click();
     await expect(page.getByTestId("commit-verified-banner")).toBeVisible({ timeout: 30_000 });
@@ -42,14 +40,13 @@ test.describe("Phase 9 — HITL commit + verify", () => {
   });
 
   test("P09-TC-002 — reject leaves draft", async ({ page }) => {
-    await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill("Find Rajesh Sharma");
-    await page.getByRole("button", { name: "Send" }).click();
+    await openRajeshCase(page);
     await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill("Prepare correction draft");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByTestId("correction-draft-view")).toBeVisible({ timeout: 30_000 });
 
     await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill("Submit for approval");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByTestId("approval-modal")).toBeVisible({ timeout: 30_000 });
 
     await page.getByTestId("approval-reject-btn").click();
