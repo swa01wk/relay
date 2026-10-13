@@ -16,5 +16,5 @@ Relay separates **control** from **media** for browser voice sessions:
 ## Boundaries
 
 - Pipecat types stop in `adapters/realtime/pipecat/` — runtime depends only on `RealtimeTransport`.
-- `@relay/web-sdk` implements signaling with browser WebRTC APIs (no Pipecat client packages).
+- `@sumukhj1219-wkt-org/relay-web-sdk` implements signaling with browser WebRTC APIs (no Pipecat client packages).
 - Post-POC: swap to `livekit.py` without changing mortgage UI or protocol schemas (§5.3).

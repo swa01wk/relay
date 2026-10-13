@@ -136,20 +136,17 @@ class OpenAIProvider(ModelProvider):
 
 
 def _mock_reply(messages: list[dict[str, Any]]) -> str:
+    """Canned reply used when no API key is configured (local runs and tests)."""
     last_user = ""
     for message in reversed(messages):
         if message.get("role") == "user":
             last_user = str(message.get("content", ""))
             break
-    lowered = last_user.lower()
-    if "who are you" in lowered:
-        return (
-            "I'm the mortgage servicing reference assistant for this POC. "
-            "I can help with general questions about your account."
-        )
+    if "who are you" in last_user.lower():
+        return "I'm a Relay demo assistant running without a model API key, so I can only echo."
     if last_user:
-        return f"You said: {last_user}. How can I help you with your mortgage today?"
-    return "Hello! How can I help you with your mortgage servicing questions today?"
+        return f"You said: {last_user}. (No model API key is configured, so this is a canned reply.)"
+    return "Hello! No model API key is configured, so I can only give canned replies."
 
 
 def _chunk_text(text: str, size: int = 12) -> list[str]:

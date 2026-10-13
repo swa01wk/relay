@@ -82,6 +82,6 @@ def _default_system_prompt() -> str:
     if bundled.is_file():
         return bundled.read_text(encoding="utf-8").strip()
     return (
-        "You are a helpful mortgage servicing reference assistant. "
-        "Answer briefly and professionally. You do not have access to tools yet."
+        "You are a helpful assistant. Answer briefly and professionally. "
+        "You do not have access to tools or account data."
     )

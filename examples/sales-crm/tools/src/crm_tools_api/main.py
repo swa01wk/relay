@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from crm_tools_api import logic
+from crm_tools_api.relay_signature import require_relay_signature
 from crm_tools_api.tools import TOOL_SPECS, call_tool, tool_manifest
 
 app = FastAPI(title="Sales CRM tools API", version="0.1.0")
@@ -25,7 +26,7 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/tools")
+@app.get("/tools", dependencies=[Depends(require_relay_signature)])
 async def list_tools() -> dict[str, Any]:
     """Tool discovery for Relay agent manifests."""
     return {"tools": tool_manifest()}
@@ -36,7 +37,7 @@ async def dashboard() -> dict[str, Any]:
     return logic.get_dashboard()
 
 
-@app.post("/tools/{name}")
+@app.post("/tools/{name}", dependencies=[Depends(require_relay_signature)])
 async def run_tool(name: str, arguments: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
     if name not in TOOL_SPECS:
         raise HTTPException(status_code=404, detail=f"unknown tool {name}")

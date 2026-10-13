@@ -10,4 +10,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Relay assistant
 
-Before working on the Relay assistant (chat, voice, AI-rendered surfaces), read `node_modules/@relay/web-sdk/AGENTS.md` and follow it.
+Before working on the Relay assistant (chat, voice, AI-rendered surfaces), read `node_modules/@sumukhj1219-wkt-org/relay-web-sdk/AGENTS.md` and follow it.

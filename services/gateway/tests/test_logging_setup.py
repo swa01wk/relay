@@ -6,7 +6,7 @@ import io
 import json
 import logging
 
-from relay_gateway.logging_setup import JsonFormatter, RedactingFilter, TextFormatter, redact
+from relay_gateway.core.logs import JsonFormatter, RedactingFilter, TextFormatter, redact
 
 
 def _logger(formatter: logging.Formatter) -> tuple[logging.Logger, io.StringIO]:

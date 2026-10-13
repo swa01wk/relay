@@ -25,7 +25,7 @@ import {
   type UiFormSurface,
   type UiSurface,
   type UiTableSurface,
-} from "@relay/web-sdk"
+} from "@sumukhj1219-wkt-org/relay-web-sdk"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"

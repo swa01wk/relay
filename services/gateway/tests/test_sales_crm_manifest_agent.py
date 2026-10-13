@@ -12,7 +12,7 @@ import pytest
 from pathlib import Path
 
 from crm_tools_api.tools import TOOL_SPECS, call_tool, tool_manifest
-from relay_gateway.manifests import build_manifest_runtime, parse_manifest
+from relay_gateway.services.agent_service import build_manifest_runtime, parse_manifest
 from relay_protocol import EventType
 from relay_runtime import MemoryEventStore, ModelRouter, PersistingEventGateway, SessionManager
 from relay_runtime.ports.model import ModelProvider

@@ -1,0 +1,24 @@
+{
+  "name": "@sumukhj1219-wkt-org/relay-cli",
+  "version": "0.1.1",
+  "type": "module",
+  "description": "Relay command line: log in, manage projects and API keys.",
+  "bin": {
+    "relay": "bin/relay.mjs"
+  },
+  "engines": {
+    "node": ">=18.3"
+  },
+  "scripts": {
+    "test": "node --test src/cli.test.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "!src/**/*.test.mjs",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

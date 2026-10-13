@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from relay_adapter_models_openai import OpenAIProvider
-from relay_gateway.manifests import ManifestError, load_agent_manifests, parse_manifest, registry_from_tool_specs
+from relay_gateway.services.agent_service import ManifestError, load_agent_manifests, parse_manifest, registry_from_tool_specs
 from relay_runtime import ModelRouter
 
 REPO = Path(__file__).resolve().parents[3]

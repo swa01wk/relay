@@ -5,22 +5,16 @@ Goal: a chat + voice assistant panel, and an area where AI-generated surfaces (t
 ## 1. Install and configure
 
 ```bash
-pnpm add @relay/web-sdk        # inside the Relay monorepo: "@relay/web-sdk": "workspace:*"
+npm install @sumukhj1219-wkt-org/relay-web-sdk
 ```
 
-The package ships TypeScript source. In Next.js add it to `transpilePackages`:
+It is plain ES modules with TypeScript types and no dependencies; no bundler configuration is needed.
 
-```ts
-// next.config.ts
-const nextConfig = { transpilePackages: ["@relay/web-sdk"] }
-export default nextConfig
-```
-
-Environment (public, browser-visible — no secrets):
+Environment (public, browser-visible — the publishable key is designed to be public; never put a secret key `rsk_…` here):
 
 ```bash
 NEXT_PUBLIC_GATEWAY_URL=http://localhost:8080   # Relay gateway
-NEXT_PUBLIC_PROJECT_ID=proj-<app>
+NEXT_PUBLIC_RELAY_API_KEY=rpk_…                  # publishable key: `relay keys create --kind publishable`
 NEXT_PUBLIC_AGENT_ID=<agent_id>                  # must match the backend registration (02-backend.md)
 ```
 
@@ -33,11 +27,11 @@ import {
   submitForm,
   type RelayEventEnvelope,
   type UiSurface,
-} from "@relay/web-sdk"
+} from "@sumukhj1219-wkt-org/relay-web-sdk"
 
 const session = createRelaySession({
   gatewayUrl: process.env.NEXT_PUBLIC_GATEWAY_URL!,
-  projectId: process.env.NEXT_PUBLIC_PROJECT_ID!,
+  apiKey: process.env.NEXT_PUBLIC_RELAY_API_KEY!,   // publishable key (rpk_…); never a secret key
   agentId: process.env.NEXT_PUBLIC_AGENT_ID!,
   transport: "small-webrtc",            // "text-only" if the app never uses voice
 })
@@ -81,7 +75,7 @@ Notes:
 - `session.on("agent_activity", e => e.payload.speaking)` tells you when the agent is speaking.
 - In React, create the session inside `useEffect` and disconnect in its cleanup. Strict Mode mounts twice; that is fine (the server ends the abandoned session automatically).
 
-React reference: `examples/sales-crm/frontend/components/relay/relay-provider.tsx` wraps all of this in a `RelayProvider` + `useRelay()` hook (messages, surfaces, busy, voice, errors, `submitForm`). Copy it rather than re-deriving it.
+In React, put all of this in one provider component (`RelayProvider`) with a `useRelay()` hook exposing messages, surfaces, busy, voice state, errors and `submitForm`, so the rest of the app never touches the session directly.
 
 ## 3. Render surfaces
 
@@ -103,9 +97,9 @@ Every surface also has optional `id` and `title`. Exact TypeScript types: `src/u
 Helpers:
 - `surfaceToCsv(surface, rows?)` → CSV string for `table`, `chart`, `comparison`, `kv` (pass the filtered/sorted rows for tables). Download it with a `Blob` + `<a download>`.
 - Form values: `number` fields → `Number(value)` or `null`; `checkbox` → boolean.
-- **Saving forms (`submitTool`).** The agent can bind a form to a backend write tool; Relay builds its fields from the tool's schema and saves the submission through that tool (the binding lives on the server, so the browser cannot change which tool runs). Show progress per form: set "Saving…" on submit, then listen for `COMMIT_VERIFIED` (`payload.form_id` → "Saved") and `ERROR` with `payload.message === "commit_failed"` (`payload.form_id`, `payload.error` → show it and re-enable the form so the user can fix and resubmit). Refresh any on-screen data after `COMMIT_VERIFIED`. The assistant then confirms in chat; the runtime's follow-up message text starts with `[Action approved|rejected|failed]` — show it as a short status note, not a user bubble (see the CRM's `displayUserText`).
+- **Saving forms (`submitTool`).** The agent can bind a form to a backend write tool; Relay builds its fields from the tool's schema and saves the submission through that tool (the binding lives on the server, so the browser cannot change which tool runs). Show progress per form: set "Saving…" on submit, then listen for `COMMIT_VERIFIED` (`payload.form_id` → "Saved") and `ERROR` with `payload.message === "commit_failed"` (`payload.form_id`, `payload.error` → show it and re-enable the form so the user can fix and resubmit). Refresh any on-screen data after `COMMIT_VERIFIED`. The assistant then confirms in chat; the runtime's follow-up message text starts with `[Action approved|rejected|failed]` — show it as a short status note, not a user bubble.
 
-Reference renderers built from shadcn components: `examples/sales-crm/frontend/components/relay/surfaces.tsx`.
+Build one renderer component per surface kind from your own design system (e.g. shadcn Table, Card, Alert, a Recharts chart); the surface types in `src/ui-surfaces.ts` list every field.
 
 ## 4. Let the assistant change the app's own screen (recommended)
 
@@ -113,29 +107,29 @@ Give the agent actions over components that already exist (filter a table, open 
 
 ```ts
 const off = session.registerAction(
-  "FILTER_DEALS_TABLE",
+  "FILTER_ORDERS_TABLE",
   (params) => {                                   // params follow your JSON schema
     applyFilters(params)
     scrollToTable()
     return { rows_shown: 21, total: 80 }          // returned object goes back to the agent
   },
   {
-    description: "Filter the deals table on the dashboard (always on screen). Returns rows_shown.",
+    description: "Filter the orders table on the dashboard (always on screen). Returns rows_shown.",
     parameters: {
       type: "object",
       properties: {
         min_amount: { type: ["number", "null"], description: "Minimum amount in USD; null clears" },
-        owner: { type: ["string", "null"] },
+        customer: { type: ["string", "null"] },
         reset: { type: "boolean", description: "Clear all filters first" },
       },
     },
   },
 )
-// Also tell the agent what is visible, so follow-ups ("only Ava's") build on current filters:
-session.sendState({ deals_table: { visible: true, filters, rows_shown: 21, total: 80 } })
+// Also tell the agent what is visible, so follow-ups ("only Acme's") build on current filters:
+session.sendState({ orders_table: { visible: true, filters, rows_shown: 21, total: 80 } })
 ```
 
-Rules: register before or after `connect()` (the SDK re-advertises on changes); unregister (`off()`) when the component unmounts; make the handler idempotent and return counts the agent can repeat; describe every parameter. In React, the CRM's `useRelayAction(name, handler, spec)` hook (`components/relay/relay-provider.tsx`) handles registration timing and unmounts.
+Rules: register before or after `connect()` (the SDK re-advertises on changes); unregister (`off()`) when the component unmounts; make the handler idempotent and return counts the agent can repeat; describe every parameter. In React, wrap this in a small `useRelayAction(name, handler, spec)` hook that registers in an effect and calls `off()` in its cleanup.
 
 ## 5. Optional: custom UI actions and shared state
 
@@ -143,9 +137,9 @@ Actions registered **without** a spec are not advertised; only custom agents can
 
 ```ts
 session.registerAction("OPEN_ENTITY", async (params, { actionId }) => {
-  router.push(`/deals/${params.id}`)         // throw to report ACTION_FAILED with the message
+  router.push(`/orders/${params.id}`)         // throw to report ACTION_FAILED with the message
 })
-session.sendState({ screen: "deal", selected_id: "DEAL-2042" })   // tell the agent what the user sees
+session.sendState({ screen: "order", selected_id: "ORD-2042" })   // tell the agent what the user sees
 session.sendState(edited, { optimisticAdvance: true })            // a human edit; beats stale agent updates
 session.onStateConflict(({ expectedVersion, actualVersion }) => showBanner())
 ```
@@ -166,7 +160,7 @@ session.grantApproval(approvalId)   // or session.rejectApproval(approvalId)
 - [ ] A data request ("show … as a table", "chart …") renders a surface with the app's components.
 - [ ] Stop the gateway and send a message: an error is shown, nothing spins forever.
 - [ ] Voice: click to start, speak, see the live transcript and hear the reply; mute works.
-- [ ] For each advertised action: ask for something it covers (e.g. "deals over $70K") — the existing component changes and no new surface appears.
+- [ ] For each advertised action: ask for something it covers (e.g. "orders over $500") — the existing component changes and no new surface appears.
 - [ ] Type-check and lint pass; the production build succeeds.
 
 ## Common mistakes
@@ -180,4 +174,3 @@ session.grantApproval(approvalId)   // or session.rejectApproval(approvalId)
 | Raw `<b>`/JSON shown in chat | Rendering markdown or payload objects as text; use the surface renderers |
 | "not connected" / connect fails although the gateway is healthy | Something called `sendState`/`sendText` before the WebSocket opened (e.g. from a `SESSION_READY` handler) — send after `connect()` resolves |
 | The agent draws a new table instead of filtering yours | Action not advertised (missing `spec`), registered after unmount, or its `description` doesn't say what it covers |
-| `Module parse failed` for `@relay/web-sdk` | Add it to `transpilePackages` (Next.js) or your bundler's TS handling |

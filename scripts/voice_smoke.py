@@ -71,7 +71,9 @@ async def _run_in_process() -> int:
     from pipecat.frames.frames import InterimTranscriptionFrame, TranscriptionFrame
     from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
-    from relay_gateway import deps
+    from relay_gateway.core import container as deps
+    os.environ.setdefault("RELAY_DEV_SESSIONS", "1")  # in-process gateway, no API key
+    os.environ.setdefault("RELAY_EXAMPLE_MORTGAGE", "1")
     from relay_gateway.app import create_app
     from relay_protocol import EventType
     from relay_runtime.memory_event_store import MemoryEventStore

@@ -73,4 +73,5 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile || pnpm install
       - run: pnpm --filter @relay/mortgage-frontend lint
-      - run: pnpm --filter @relay/web-sdk test
+      - run: pnpm --filter @sumukhj1219-wkt-org/relay-web-sdk test
+      - run: pnpm --filter @sumukhj1219-wkt-org/relay-cli test

@@ -14,10 +14,13 @@ import {
   type UiFormSurface,
   type UiSurface,
   type VoiceConnectionState,
-} from "@relay/web-sdk"
+} from "@sumukhj1219-wkt-org/relay-web-sdk"
 
 const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL ?? "http://localhost:8080"
 const PROJECT_ID = process.env.NEXT_PUBLIC_PROJECT_ID ?? "proj-sales-crm"
+// Publishable project key (`relay keys create --kind publishable`). Without it the app uses a
+// local dev gateway (RELAY_DEV_SESSIONS=1), where the project id is enough.
+const API_KEY = process.env.NEXT_PUBLIC_RELAY_API_KEY
 const AGENT_ID = process.env.NEXT_PUBLIC_AGENT_ID ?? "sales-crm"
 const FORM_PREFIX = "[Form submitted]"
 
@@ -129,7 +132,7 @@ export function RelayProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     const session = createRelaySession({
       gatewayUrl: GATEWAY_URL,
-      projectId: PROJECT_ID,
+      ...(API_KEY ? { apiKey: API_KEY } : { projectId: PROJECT_ID }),
       agentId: AGENT_ID,
       transport: "small-webrtc",
     })

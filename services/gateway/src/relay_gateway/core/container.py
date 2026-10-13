@@ -1,20 +1,22 @@
-"""Gateway dependencies and wiring."""
+"""The gateway's composition root: builds the runtime, adapters, repositories and services once.
+
+Controllers import the services (and nothing lower) from here. Everything environment-specific
+— which store, which lock, which tools — is decided in this file.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-from datetime import datetime, timedelta, timezone
 from collections.abc import Callable
 from pathlib import Path
 
 from relay_adapter_models_openai import OpenAIProvider
 from relay_adapter_observability_otel import OtelTraceBridge, tracer_provider_from_env
 from relay_adapter_observability_prometheus import PrometheusMetricsBridge
+from relay_adapter_agents_reference import ReferenceTextAgent
 from relay_adapter_tools_http import HttpToolExecutor
-from relay_mortgage_agent import MortgageServicingAgent
-from relay_mortgage_agent.tools_local import LocalMortgageToolExecutor
+from relay_gateway.core import example_agents
 from relay_adapter_persistence_postgres import PostgresEventStore
 from relay_adapter_persistence_redis import RedisSessionLock
 from relay_adapter_realtime_pipecat import PipecatSmallWebRtcTransport
@@ -34,11 +36,50 @@ from relay_runtime import (
     TraceManager,
 )
 from relay_runtime.voice_output import VoiceOutputConfig
-from relay_gateway.manifests import load_agent_manifests
+from relay_gateway.repositories.account_repository import (
+    AccountRepository,
+    MemoryAccountRepository,
+    PostgresAccountRepository,
+)
+from relay_gateway.repositories.api_key_repository import (
+    ApiKeyRepository,
+    MemoryApiKeyRepository,
+    PostgresApiKeyRepository,
+)
+from relay_gateway.repositories.database import Database
+from relay_gateway.repositories.device_login_repository import (
+    DeviceLoginRepository,
+    MemoryDeviceLoginRepository,
+    PostgresDeviceLoginRepository,
+)
+from relay_gateway.repositories.event_repository import EventRepository
+from relay_gateway.repositories.project_agent_repository import (
+    MemoryProjectAgentRepository,
+    PostgresProjectAgentRepository,
+    ProjectAgentRepository,
+)
+from relay_gateway.repositories.project_secret_repository import (
+    MemoryProjectSecretRepository,
+    PostgresProjectSecretRepository,
+    ProjectSecretRepository,
+)
+from relay_gateway.repositories.session_repository import SessionRepository
+from relay_gateway.services.admin_service import AdminService
+from relay_gateway.services.agent_service import load_agent_manifests
+from relay_gateway.services.auth_service import AuthService
+from relay_gateway.services.device_login_service import DeviceLoginService
+from relay_gateway.services.metrics_service import MetricsService
+from relay_gateway.core.crypto import SecretBox
+from relay_gateway.services.project_agent_service import ProjectAgentService
+from relay_gateway.services.project_service import ProjectService
+from relay_gateway.services.secret_service import SecretService
+from relay_gateway.services.realtime_service import RealtimeService
+from relay_gateway.services.retention_service import RetentionService
+from relay_gateway.services.session_service import SessionService
+from relay_gateway.services.stream_service import StreamService
 from relay_runtime.ports.agent import AgentAdapter
 from relay_runtime.ports.events import EventStore
 from relay_runtime.ports.tools import ToolExecutor
-from relay_mortgage_agent.tool_definitions import register_mortgage_tools
 
 
 def _build_event_store() -> EventStore:
@@ -53,29 +94,13 @@ def _build_session_lock() -> LocalSessionLock | RedisSessionLock:
     return LocalSessionLock()
 
 
-def _build_tool_delegate() -> ToolExecutor:
-    url = os.environ.get("RELAY_MORTGAGE_TOOLS_URL", "").strip()
-    if url:
-        return HttpToolExecutor(base_url=url)
-    return LocalMortgageToolExecutor()
+class _NoTools(ToolExecutor):
+    """The default agent has no tools; anything that reaches this is a bug upstream."""
 
+    async def execute(self, session_id, *, tool_name, arguments, idempotency_key=None):
+        del session_id, arguments, idempotency_key
+        return {"error": f"unknown_tool:{tool_name}"}
 
-tool_delegate = _build_tool_delegate()
-
-
-def _build_registry_executor() -> RegistryToolExecutor:
-    registry = ToolRegistry()
-    register_mortgage_tools(registry)
-    timeout = float(os.environ.get("RELAY_TOOL_TIMEOUT_SECONDS", "30"))
-    return RegistryToolExecutor(
-        registry=registry,
-        delegate=tool_delegate,
-        trace_manager=TraceManager(),
-        default_timeout_seconds=timeout,
-    )
-
-
-logger = logging.getLogger(__name__)
 
 event_store = _build_event_store()
 # Postgres round trips must not sit on the token-streaming path; batch them behind delivery.
@@ -87,10 +112,22 @@ event_gateway = PersistingEventGateway(
 )
 model_provider = OpenAIProvider()
 model_router = ModelRouter(model_provider)
-registry_tool_executor = _build_registry_executor()
+# The gateway-wide default agent serves dev sessions whose agent_id is not registered. It is a
+# plain assistant with no tools unless the bundled example is switched on (core/example_agents.py; demos and tests).
+# Sessions started with a project key never use it (see ProjectAgentService).
+if example_agents.enabled():
+    _default_agent, _default_registry, tool_delegate = example_agents.build(model_router)
+else:
+    _default_agent, _default_registry, tool_delegate = ReferenceTextAgent(model_router), ToolRegistry(), _NoTools()
+registry_tool_executor = RegistryToolExecutor(
+    registry=_default_registry,
+    delegate=tool_delegate,
+    trace_manager=TraceManager(),
+    default_timeout_seconds=float(os.environ.get("RELAY_TOOL_TIMEOUT_SECONDS", "30")),
+)
 agent_runtime = AgentRuntime(
     model_router=model_router,
-    agent=MortgageServicingAgent(model_router),
+    agent=_default_agent,
     tool_executor=registry_tool_executor,
 )
 session_lock = _build_session_lock()
@@ -133,7 +170,7 @@ def add_tool_agent(
 
 
 # Most agents are declarative: ``$RELAY_AGENTS_DIR/*.yaml`` manifests loaded at startup (see
-# manifests.py). ``add_tool_agent`` is for agents that need custom Python.
+# services/agent_service.py). ``add_tool_agent`` is for agents that need custom Python.
 AGENTS_DIR = Path(os.environ.get("RELAY_AGENTS_DIR", "agents"))
 
 
@@ -168,24 +205,36 @@ session_manager = SessionManager(
 )
 
 
-def _agent_label(session_id: str) -> str | None:
-    """Metrics label: registered agent ids only (agent_id is client-supplied text)."""
-    session = session_manager.get(session_id)
-    if session is None:
-        return None
-    return session.agent_id if session.agent_id in session_manager.agent_runtimes else "default"
-
+# Repositories: the only gateway code that reads stores.
+event_repository = EventRepository(event_store, event_gateway)
+session_repository = SessionRepository(session_manager)
+# Accounts, projects and keys live in Postgres when one is configured; in memory otherwise
+# (local runs and tests — everything is lost on restart).
+database: Database | None = Database() if os.environ.get("RELAY_DATABASE_URL") else None
+account_repository: AccountRepository = (
+    PostgresAccountRepository(database) if database else MemoryAccountRepository()
+)
+api_key_repository: ApiKeyRepository = PostgresApiKeyRepository(database) if database else MemoryApiKeyRepository()
+device_login_repository: DeviceLoginRepository = (
+    PostgresDeviceLoginRepository(database) if database else MemoryDeviceLoginRepository()
+)
+project_agent_repository: ProjectAgentRepository = (
+    PostgresProjectAgentRepository(database) if database else MemoryProjectAgentRepository()
+)
+project_secret_repository: ProjectSecretRepository = (
+    PostgresProjectSecretRepository(database) if database else MemoryProjectSecretRepository()
+)
 
 # Metrics are derived from the event stream; one subscriber sees every session.
 metrics_bridge = PrometheusMetricsBridge(
-    agent_for_session=_agent_label,
-    active_sessions=lambda: len(session_manager._sessions),
+    agent_for_session=session_repository.agent_label,
+    active_sessions=session_repository.count,
 )
 event_gateway.subscribe("*", metrics_bridge.on_event)
 
 # Traces are exported only when an OTLP endpoint is configured (OTEL_EXPORTER_OTLP_ENDPOINT).
 _tracer_provider = tracer_provider_from_env()
-trace_bridge = OtelTraceBridge(_tracer_provider, agent_for_session=_agent_label) if _tracer_provider else None
+trace_bridge = OtelTraceBridge(_tracer_provider, agent_for_session=session_repository.agent_label) if _tracer_provider else None
 if trace_bridge is not None:
     event_gateway.subscribe("*", trace_bridge.on_event)
 
@@ -204,8 +253,30 @@ if realtime_transport is not None:
         on_transcript_final=session_manager.notify_voice_transcript_final,
     )
 
+# Services: what controllers call.
+auth_service = AuthService(account_repository, api_key_repository)
+project_service = ProjectService(account_repository, api_key_repository, auth_service)
+device_login_service = DeviceLoginService(device_login_repository, auth_service, project_service)
+secret_service = SecretService(project_secret_repository, SecretBox())
+# Sessions started with a project key run on that project's own agent, tools and model key.
+project_agent_service = ProjectAgentService(
+    project_agent_repository,
+    secret_service,
+    model_provider_factory=lambda api_key, model: OpenAIProvider(api_key=api_key, model=model),
+    is_live=session_repository.is_live,
+)
+secret_service.on_change = project_agent_service.invalidate
+session_manager.runtime_resolver = lambda session: project_agent_service.runtime_of_session(session.session_id)
+session_service = SessionService(
+    session_manager, session_repository, event_repository, project_service, project_agent_service
+)
+stream_service = StreamService(session_manager, session_repository)
+realtime_service = RealtimeService(session_manager)
+admin_service = AdminService(session_repository, event_repository)
+metrics_service = MetricsService(metrics_bridge)
+retention_service = RetentionService(event_repository)
+
 _voice_prewarm_task: asyncio.Task[None] | None = None
-_retention_task: asyncio.Task[None] | None = None
 
 
 def _warm_pipecat_deferred_imports() -> None:
@@ -231,46 +302,27 @@ async def _prewarm_voice_stack() -> None:
     await asyncio.to_thread(build_turn_detector)
 
 
-def _retention_days() -> float:
-    raw = os.environ.get("RELAY_EVENT_RETENTION_DAYS", "").strip()
-    return float(raw) if raw else 0.0
-
-
-async def _retention_loop(days: float) -> None:
-    """Delete events older than the retention window, now and then hourly."""
-    while True:
-        try:
-            await event_gateway.flush()
-            removed = await event_store.delete_older_than(datetime.now(timezone.utc) - timedelta(days=days))
-            if removed:
-                logger.info("event retention removed %d events older than %g days", removed, days)
-        except Exception:
-            logger.exception("event retention failed")
-        await asyncio.sleep(3600)
-
-
 async def startup() -> None:
-    global _voice_prewarm_task, _retention_task
+    global _voice_prewarm_task
     if isinstance(event_store, PostgresEventStore):
         await event_store.connect()
+    if database is not None:
+        await database.pool()  # creates the identity tables on first start
     await load_agent_manifests(
         AGENTS_DIR,
         model_router=model_router,
         runtimes=extra_agent_runtimes,
         delegates=extra_tool_delegates,
     )
-    if _retention_days() > 0 and _retention_task is None:
-        _retention_task = asyncio.create_task(_retention_loop(_retention_days()))
+    retention_service.start()
     # Pipecat/Silero prewarm can take 60–90s; do not block HTTP /health or WebSocket connect.
     if realtime_transport is not None and _voice_prewarm_task is None:
         _voice_prewarm_task = asyncio.create_task(_prewarm_voice_stack())
 
 
 async def shutdown() -> None:
-    global _voice_prewarm_task, _retention_task
-    if _retention_task is not None:
-        _retention_task.cancel()
-        _retention_task = None
+    global _voice_prewarm_task
+    retention_service.stop()
     if _voice_prewarm_task is not None:
         _voice_prewarm_task.cancel()
         try:
@@ -284,10 +336,13 @@ async def shutdown() -> None:
     if trace_bridge is not None:
         await asyncio.to_thread(trace_bridge.shutdown)  # flush pending spans
     await model_provider.aclose()
+    await project_agent_service.aclose()
     for delegate in (tool_delegate, *extra_tool_delegates):
         if isinstance(delegate, HttpToolExecutor):
             await delegate.aclose()
     if isinstance(event_store, PostgresEventStore):
         await event_store.close()
+    if database is not None:
+        await database.close()
     if isinstance(session_lock, RedisSessionLock):
         await session_lock.close()

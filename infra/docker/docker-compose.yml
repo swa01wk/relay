@@ -70,9 +70,19 @@ services:
       RELAY_GATEWAY_PORT: "8080"
       RELAY_DATABASE_URL: "postgresql://relay:relay@postgres:5432/relay"
       RELAY_REDIS_URL: "redis://redis:6379/0"
+      # Demo: the mortgage example is the default agent for dev sessions (off in production).
+      RELAY_EXAMPLE_MORTGAGE: "1"
       RELAY_MORTGAGE_TOOLS_URL: "http://mortgage-tools:8090"
       RELAY_CRM_TOOLS_URL: "http://crm-tools:8091"
       RELAY_AGENTS_DIR: /app/agents
+      # Encrypts customers' model keys at rest. The fallback is a public, dev-only value:
+      # set a long random RELAY_SECRETS_KEY in .env for anything real, and never change it
+      # afterwards (stored secrets become unreadable).
+      RELAY_SECRETS_KEY: ${RELAY_SECRETS_KEY:-relay-dev-only-secrets-key-not-for-production}
+      # Local dev: customers' tools URLs may point at localhost / compose services.
+      RELAY_ALLOW_PRIVATE_TOOLS_URLS: "1"
+      # Local dev: sessions without an API key (POST /dev/sessions). Never set this in production.
+      RELAY_DEV_SESSIONS: "1"
       # Local dev: open /metrics. In production set RELAY_METRICS_TOKEN instead (see reference).
       RELAY_METRICS_ENABLED: "1"
     # Declarative agents (agents/*.yaml); edit and restart the gateway to apply.

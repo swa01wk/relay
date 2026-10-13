@@ -10,7 +10,7 @@ import {
   type RelayEventEnvelope,
   type UiSurface,
   type VoiceConnectionState,
-} from "@relay/web-sdk";
+} from "@sumukhj1219-wkt-org/relay-web-sdk";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ import {
   recalculateDraftForEffectiveDate,
   type MortgageUiState,
 } from "@/lib/mortgage-ui-state";
-import type { SendStateOptions } from "@relay/web-sdk";
+import type { SendStateOptions } from "@sumukhj1219-wkt-org/relay-web-sdk";
 
 const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL ?? "http://localhost:8080";
 const projectId = process.env.NEXT_PUBLIC_PROJECT_ID ?? "proj-mortgage-poc";

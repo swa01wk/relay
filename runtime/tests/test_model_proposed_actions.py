@@ -212,3 +212,58 @@ async def test_side_effect_guard_requires_a_grant_for_that_exact_tool():
     finally:
         await manager.end_session(session.session_id)
     assert store.calls == []
+
+
+@pytest.mark.asyncio
+async def test_agent_decides_shared_state_after_a_saved_change():
+    """The runtime knows no domain: after a verified save it asks the agent for the new state."""
+    manager, events, _store, _model = _setup({"deal_id": "DEAL-2042", "stage": "Negotiation", "summary": "Move it"})
+    seen: dict[str, Any] = {}
+
+    def state_after_commit(*, state, tool_name, arguments, commit_result, verify_result):
+        seen.update(tool_name=tool_name, arguments=arguments, verify_result=verify_result)
+        return {**state, "last_saved": commit_result["deal"]["stage"]}
+
+    manager.agent_runtime.agent.state_after_commit = state_after_commit
+    session, _ = await manager.create_dev_session(project_id="p", agent_id="a")
+    try:
+        await manager.submit_user_text(session.session_id, "Move DEAL-2042 to Negotiation")
+        assert "last_saved" not in session.context.state
+        approval_id = _of(events, EventType.APPROVAL_REQUESTED)[0].payload["approval_id"]
+        await manager.submit_client_app_event(
+            session.session_id,
+            name="approval.grant",
+            payload={"approval_id": approval_id, "auth_proof": "dev-approver"},
+        )
+        await _settle(manager, session.session_id)
+
+        assert session.context.state["last_saved"] == "Negotiation"
+        assert seen["tool_name"] == "update_deal_stage" and seen["arguments"]["deal_id"] == "DEAL-2042"
+        verified = _of(events, EventType.COMMIT_VERIFIED)[0].payload
+        assert verified["verified"] is True and verified["verify_result"] is None  # no verify step here
+    finally:
+        await manager.end_session(session.session_id)
+
+
+def test_runtime_and_published_packages_contain_no_example_domain():
+    """Relay is domain-agnostic: example domains live in examples/ and agents/, never in the engine,
+    the adapters, the gateway (one opt-in module aside), the SDK or the CLI."""
+    import re
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    domain = re.compile(r"mortgage|crm\b|sales[-_ ]crm", re.IGNORECASE)
+    sources = [
+        *(repo / "runtime" / "src").rglob("*.py"),
+        *(repo / "packages" / "protocol" / "src").rglob("*.py"),
+        *(repo / "packages" / "web-sdk" / "src").glob("*.ts"),
+        *(repo / "packages" / "cli" / "src").glob("*.mjs"),
+        *(repo / "packages" / "cli" / "bin").glob("*.mjs"),
+        *(repo / "adapters").glob("*/*/src/**/*.py"),
+        *(repo / "adapters").glob("*/*/src/**/*.txt"),
+        *(p for p in (repo / "services" / "gateway" / "src").rglob("*.py") if p.name != "example_agents.py"),
+    ]
+    assert len(sources) > 20
+    offenders = [f"{p.relative_to(repo)}:{n}" for p in sources if ".test." not in p.name
+                 for n, line in enumerate(p.read_text().splitlines(), 1) if domain.search(line)]
+    assert offenders == []

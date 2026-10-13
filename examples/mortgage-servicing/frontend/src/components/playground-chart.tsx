@@ -1,6 +1,6 @@
 "use client";
 
-import type { UiChartSurface } from "@relay/web-sdk";
+import type { UiChartSurface } from "@sumukhj1219-wkt-org/relay-web-sdk";
 import {
   Area,
   AreaChart,

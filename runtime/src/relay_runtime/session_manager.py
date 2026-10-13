@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from secrets import token_urlsafe
+from collections.abc import Callable
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -172,6 +173,9 @@ class SessionManager:
     # agent_id → runtime (agent + tools). Sessions with an unregistered agent_id use
     # ``agent_runtime`` / ``tool_executor``.
     agent_runtimes: dict[str, AgentRuntime] = field(default_factory=dict)
+    # Optional per-session choice (e.g. a tenant's own agent, tools and model key); returning
+    # ``None`` falls back to ``agent_runtimes`` / ``agent_runtime``.
+    runtime_resolver: Callable[[SessionRecord], AgentRuntime | None] | None = None
     # Session with no connected client (never connected, or every tab closed) is ended after
     # this grace; a reconnect inside it keeps the session. <= 0 disables reaping.
     idle_grace_seconds: float = field(
@@ -200,6 +204,10 @@ class SessionManager:
         return f"{prev} {incoming}".strip()
 
     def _runtime_for(self, session: SessionRecord) -> AgentRuntime:
+        if self.runtime_resolver is not None:
+            resolved = self.runtime_resolver(session)
+            if resolved is not None:
+                return resolved
         return self.agent_runtimes.get(session.agent_id, self.agent_runtime)
 
     def _tools_for(self, session: SessionRecord) -> RegistryToolExecutor | None:
@@ -913,7 +921,8 @@ class SessionManager:
                     "form_id": record.form_id,
                     "verified": verified,
                     "result": commit_result,
-                    "mortgage": verify_result.get("mortgage"),
+                    # What the verify tool returned (absent when the approval had no verify step).
+                    "verify_result": verify_result if record.verify_tool else None,
                     "lifecycle_stage": HitlLifecycleStage.VERIFY.value,
                 },
             ),
@@ -921,7 +930,13 @@ class SessionManager:
         if verified:
             # Caller (approval.grant handling) already holds session.context_lock; asyncio.Lock is
             # not re-entrant, so taking it again here would deadlock.
-            await self._apply_post_commit_state(session, verify_result, record.arguments)
+            await self._apply_post_commit_state(
+                session,
+                tool_name=record.tool_name,
+                arguments=record.arguments,
+                commit_result=commit_result,
+                verify_result=verify_result,
+            )
         if record.followup:
             outcome = json.dumps(commit_result, default=str)[:1500]
             self._enqueue_followup_turn(
@@ -933,24 +948,24 @@ class SessionManager:
     async def _apply_post_commit_state(
         self,
         session: SessionRecord,
+        *,
+        tool_name: str,
+        arguments: dict[str, Any],
+        commit_result: dict[str, Any],
         verify_result: dict[str, Any],
-        commit_arguments: dict[str, Any],
     ) -> None:
-        mortgage = verify_result.get("mortgage")
-        if not isinstance(mortgage, dict):
+        """Let the session's agent update shared state after a saved change (it knows the domain;
+        the runtime does not)."""
+        new_state = self._runtime_for(session).agent.state_after_commit(
+            state=dict(session.context.state),
+            tool_name=tool_name,
+            arguments=arguments,
+            commit_result=commit_result,
+            verify_result=verify_result,
+        )
+        if new_state is None:
             return
-        state = dict(session.context.state)
-        draft = dict(state.get("correction_draft") or {})
-        draft["status"] = "committed"
-        draft["mortgage_id"] = commit_arguments.get("mortgage_id") or draft.get("mortgage_id")
-        state["correction_draft"] = draft
-        state["screen"] = "mortgage_case"
-        state["workflow"] = "correction_committed"
-        state["case_summary"] = {
-            **dict(state.get("case_summary") or {}),
-            **mortgage,
-        }
-        session.context.apply_snapshot(state)
+        session.context.apply_snapshot(new_state)
         await self._publish_state_applied(
             session,
             source="hitl_manager",

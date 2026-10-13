@@ -1,6 +1,6 @@
 # Relay
 
-Self-hosted, domain-agnostic platform for **realtime voice + text AI assistants that drive an app's UI**: browser apps use `@relay/web-sdk`; a Python gateway runs sessions (speech → LLM + tools → speech), streams typed Relay Protocol events, renders AI-generated tables/charts/forms through the app's own components, changes what is already on screen, and asks for human approval before any data changes.
+Domain-agnostic platform for **realtime voice + text AI assistants that drive an app's UI**, delivered as a hosted service with an SDK (`@sumukhj1219-wkt-org/relay-web-sdk`) and a CLI (`relay login`): browser apps use `@sumukhj1219-wkt-org/relay-web-sdk`; a Python gateway runs sessions (speech → LLM + tools → speech), streams typed Relay Protocol events, renders AI-generated tables/charts/forms through the app's own components, changes what is already on screen, and asks for human approval before any data changes.
 
 **Status:** proof of concept. PRD phases 0–7 signed off, 8–11 implemented ([plans/STATUS.md](./plans/STATUS.md), [plans/ACCEPTANCE_TRACKER.md](./plans/ACCEPTANCE_TRACKER.md)).
 
@@ -17,7 +17,8 @@ packages/python-sdk/      Protocol models re-exported for Python agents
 packages/web-sdk/         Browser SDK + agent docs (AGENTS.md, docs/)
 runtime/                  SessionManager, turns, ToolUsingAgent, tools, approvals, ports
 adapters/                 Pipecat WebRTC, OpenAI, Deepgram, Silero, Postgres, Redis, HTTP tools
-services/gateway/         FastAPI gateway (HTTP, WebSocket, WebRTC) + agent manifest loader
+packages/cli/             `relay` CLI: login, projects, API keys
+services/gateway/         FastAPI gateway: controllers / services / repositories (HTTP, WebSocket, WebRTC, agents)
 agents/                   Declarative agents (*.yaml + prompts) loaded by the gateway
 examples/sales-crm/       Primary example: Next.js 16 + shadcn dashboard (frontend/), tools service (tools/)
 examples/mortgage-servicing/  Custom Python agent example (approve → commit → verify)
@@ -68,7 +69,7 @@ Mortgage end-to-end suites (needs the stack running): `PLAYWRIGHT_E2E=1 pnpm --f
 
 ## Environment
 
-Server variables go in `infra/docker/.env` (copy from [`.env.example`](./infra/docker/.env.example)); the full list with defaults is in the [configuration reference](./packages/web-sdk/docs/03-reference.md#configuration-self-hosted-gateway). The essentials:
+Server variables go in `infra/docker/.env` (copy from [`.env.example`](./infra/docker/.env.example)); the full list with defaults is in the [operator guide](./docs/operating-the-gateway.md#configuration). The essentials:
 
 | Variable | Purpose |
 |----------|---------|

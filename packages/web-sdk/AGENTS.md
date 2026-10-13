@@ -1,4 +1,4 @@
-# @relay/web-sdk — instructions for coding agents
+# @sumukhj1219-wkt-org/relay-web-sdk — instructions for coding agents
 
 You are integrating **Relay**: a voice + text AI assistant that answers from the app's own data and drives the app's UI (tables, charts, forms, comparisons, …). Read this file fully, then the guide for your task. Do not guess APIs — every name you need is in these docs and in `src/index.ts` / `src/ui-surfaces.ts`.
 
@@ -12,18 +12,30 @@ You are integrating **Relay**: a voice + text AI assistant that answers from the
 
 A complete new integration needs **both** guides: backend first (so the agent exists), then frontend.
 
+## Setup order (run these; do not skip one)
+
+```bash
+relay login                           # the developer signs in once, in the browser
+relay secrets set openai              # their OpenAI API key — typed hidden or piped on stdin, never as an argument
+relay agents push <agent>.yaml        # after the tools service is deployed (02-backend.md)
+relay keys create --kind publishable  # rpk_… → the app's NEXT_PUBLIC_RELAY_API_KEY
+relay origins set https://<app-domain>   # limit where that key works
+```
+
+Ask the developer to run `relay login` and `relay secrets set openai` themselves: both need their browser or their secret. Never write an API key, a secret key (`rsk_…`) or the tools signing secret into frontend code, a committed file or a command line.
+
 ## The model in one picture
 
 ```
-Browser app ──(@relay/web-sdk)──▶ Relay gateway ──▶ agent (LLM) ──▶ tools service (your data)
+Browser app ──(@sumukhj1219-wkt-org/relay-web-sdk)──▶ Relay gateway ──▶ agent (LLM) ──▶ tools service (your data)
    renders UI        WebSocket + WebRTC        runtime      decides tool calls   POST /tools/{name}
 ```
 
 Who defines what:
 
-- **Tools** (data operations such as `list_deals`) — the developer, on the **backend**: a tools service in any language that also describes its tools (`GET /tools`: name, description, JSON schema, classification).
+- **Tools** (data operations such as `list_orders`) — the developer, on the **backend**: a tools service in any language that also describes its tools (`GET /tools`: name, description, JSON schema, classification).
 - **Tool calls** — nobody writes these. The **LLM** decides at runtime which tool to call with which arguments.
-- **The agent** — backend: one YAML manifest (`agent_id`, tools URL, system prompt) in the gateway's `agents/` folder. No Python; Relay discovers the tools.
+- **The agent** — backend: one YAML manifest (`agent_id`, tools URL, system prompt) uploaded to the developer's project with `relay agents push`. No Python; Relay discovers the tools. Each project has its own agents, tools service and model API key.
 - **UI actions + renderers** — frontend: the app registers handlers (`registerAction`, `registerPlaygroundSurfaces`) and draws surfaces with its own components.
 - The **SDK never renders and never holds AI logic or secrets**. It connects, streams events, acknowledges actions, versions shared state, handles voice, and normalizes AI-generated UI into typed data.
 
@@ -37,8 +49,9 @@ Who defines what:
 6. Expose existing screen components to the agent with `registerAction(name, handler, spec)` and report what is visible with `sendState` — the agent then filters/updates what is on screen instead of drawing duplicates (frontend guide §4).
 7. Forms: a form with `submitTool` is bound to a backend write tool — submitting **saves** through that tool (the submit is the user's approval); show Saving → Saved/failed from `COMMIT_VERIFIED` / `ERROR` (`commit_failed`) events carrying `payload.form_id`, allow retry on failure, and refresh your data after `COMMIT_VERIFIED`. A form **without** `submitTool` only sends its values to the assistant — never show "saved" for those.
 8. Tools that change data (refunds, updates) must be published with `"classification": "side_effecting"` in `GET /tools`; the model can only *propose* them, and they run only after a human approves (`onApprovalRequested` → `grantApproval`; the assistant then confirms in a follow-up message). Never mark them `read_only`.
-9. Keys (OpenAI, Deepgram) stay on the server. The browser only holds the short-lived session token the gateway issues.
+9. The browser holds only the project's **publishable** key (`rpk_…`) and the short-lived session token the gateway issues. Secret keys (`rsk_…`), the model API key and the tools signing secret never go into browser code.
+10. The tools service must verify `X-Relay-Signature` on every request (backend guide §3) — it is reachable from the internet.
 
 ## Reference implementation
 
-The Relay repo's Sales CRM is the canonical, working example of everything above: `examples/sales-crm/frontend` (shadcn dashboard + assistant panel), `examples/sales-crm/tools` (tools service) and `agents/sales-crm.yaml` (the agent). Relay is self-hosted: the customer runs the gateway image. When unsure, mirror the example.
+The guides are self-contained: every template in them is complete and verified against this version of the SDK. Follow them rather than inventing structure, and read `src/index.ts` / `src/ui-surfaces.ts` in this package when you need an exact type.

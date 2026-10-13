@@ -1,14 +1,14 @@
 # Relay
 
-> Relay is a domain-agnostic platform for realtime voice + text AI agents that drive an application's UI. A browser app uses `@relay/web-sdk` to talk to a FastAPI gateway; the gateway's session runtime runs turns (speech-to-text → agent/LLM + tools → text-to-speech) and emits typed Relay Protocol (RP) events. Agents can render structured UI (tables, charts, forms, …) through a headless `PRESENT_UI` action: the SDK delivers clean data, the host app owns rendering and styling.
+> Relay is a domain-agnostic platform for realtime voice + text AI agents that drive an application's UI. A browser app uses `@sumukhj1219-wkt-org/relay-web-sdk` to talk to a FastAPI gateway; the gateway's session runtime runs turns (speech-to-text → agent/LLM + tools → text-to-speech) and emits typed Relay Protocol (RP) events. Agents can render structured UI (tables, charts, forms, …) through a headless `PRESENT_UI` action: the SDK delivers clean data, the host app owns rendering and styling.
 
-Status: proof of concept. Relay is **self-hosted**: the customer runs the gateway image (Docker). Stable: the protocol, the Web SDK client API, UI surface specs, runtime ports, `ToolUsingAgent`, declarative agent manifests (`agents/*.yaml`) with tool discovery (`GET /tools`). Marked *(changing)*: renderers live in each example app (a `@relay/react-ui` package is planned).
+Status: proof of concept. Relay is a **hosted service with an SDK and CLI**: the Relay operator runs the gateway; app developers install `@sumukhj1219-wkt-org/relay-web-sdk`, sign in with `relay login` and use a project API key. Each project has its own agents (`relay agents push`), tools service URL (calls are HMAC-signed) and model API key (`relay secrets set openai`, encrypted at rest). Stable: the protocol, the Web SDK client API, UI surface specs, runtime ports, `ToolUsingAgent`, declarative agent manifests (`agents/*.yaml`) with tool discovery (`GET /tools`). Marked *(changing)*: renderers live in each example app (a `@relay/react-ui` package is planned).
 
 **Changing Relay itself? Read [AGENTS.md](AGENTS.md)** (layout, run, targeted tests, architecture rules, known pitfalls and gaps).
 
-**Implementing an integration? Start with [packages/web-sdk/AGENTS.md](packages/web-sdk/AGENTS.md).** It ships inside the SDK package (so it is also at `node_modules/@relay/web-sdk/AGENTS.md` in any app that installs the SDK) and links step-by-step guides with verified templates: [frontend](packages/web-sdk/docs/01-frontend.md), [backend](packages/web-sdk/docs/02-backend.md), [reference](packages/web-sdk/docs/03-reference.md).
+**Implementing an integration? Start with [packages/web-sdk/AGENTS.md](packages/web-sdk/AGENTS.md).** It ships inside the SDK package (so it is also at `node_modules/@sumukhj1219-wkt-org/relay-web-sdk/AGENTS.md` in any app that installs the SDK) and links step-by-step guides with verified templates: [frontend](packages/web-sdk/docs/01-frontend.md), [backend](packages/web-sdk/docs/02-backend.md), [reference](packages/web-sdk/docs/03-reference.md).
 
-Who defines what: **tools** (data operations) are written by the developer on the backend — a tools service in any language (`POST /tools/{name}`) plus JSON-schema descriptions; **tool calls** are decided by the LLM at runtime; the **agent** is a YAML manifest (`agent_id`, tools URL, system prompt) loaded by the gateway — no Python (custom Python agents remain possible via `add_tool_agent`); the **frontend** only uses the SDK, registers UI action handlers and renders surfaces.
+Who defines what: **tools** (data operations) are written by the developer on the backend — a tools service in any language (`POST /tools/{name}`) plus JSON-schema descriptions; **tool calls** are decided by the LLM at runtime; the **agent** is a YAML manifest (`agent_id`, tools URL, system prompt) the developer uploads to their project with `relay agents push` — no Python (operators can still add custom Python agents on the gateway via `add_tool_agent`); the **frontend** only uses the SDK, registers UI action handlers and renders surfaces.
 
 Key rules for code that integrates Relay:
 
@@ -20,11 +20,12 @@ Key rules for code that integrates Relay:
 - Apps can expose screen actions with `registerAction(name, handler, spec)`; the agent then changes what is already on screen (e.g. filters an existing table) instead of drawing duplicate UI.
 - Handle `SESSION_ERROR` (`code`, `message`; `turn_failed` means a model/tool error and the session keeps working) and track busy state with `TURN_STARTED` / `TURN_COMPLETED`.
 - Never put adapter/framework types (Pipecat, OpenAI, Deepgram) in `packages/protocol` or the Web SDK's public exports; CI enforces this.
-- Keys stay server-side (`infra/docker/.env`); the browser only holds a short-lived session token.
+- Keys: the browser holds only a **publishable** project key (`rpk_…`, can only start sessions, limited to the project's allowed origins) and a short-lived session token. Secret keys (`rsk_…`), the account token (`rat_…`), the tools signing secret and the model API key never go to a browser. The model key is stored on the gateway, encrypted (`relay secrets set openai`).
+- Setup order for a new integration: `relay login` → `relay secrets set openai` → deploy the tools service (public https, verify `X-Relay-Signature`) → `relay agents push agent.yaml` → `relay keys create --kind publishable` → `createRelaySession({ gatewayUrl, apiKey, agentId })`. A session is refused with `404` if the project has no such agent and `409` if it has no model key.
 
 ## Web SDK (browser client)
 
-- [packages/web-sdk/src/index.ts](packages/web-sdk/src/index.ts): `createRelaySession({ gatewayUrl, projectId, agentId, transport })` → `connect`, `sendText`, `on(eventType)`, `registerAction`, `sendState`, `onStateConflict`, `sendEvent`, approvals, `connectVoice`/`setMicMuted`
+- [packages/web-sdk/src/index.ts](packages/web-sdk/src/index.ts): `createRelaySession({ gatewayUrl, apiKey, agentId, transport })` (`apiKey` = publishable key; `projectId` instead only against a local dev gateway) → `connect`, `sendText`, `on(eventType)`, `registerAction`, `sendState`, `onStateConflict`, `sendEvent`, approvals, `connectVoice`/`setMicMuted`
 - [packages/web-sdk/src/ui-surfaces.ts](packages/web-sdk/src/ui-surfaces.ts): `UiSurface` types, `registerPlaygroundSurfaces(session, onPresent)`, `normalizeUiSurface`, `submitForm`, `surfaceToCsv`
 - [packages/web-sdk/src/webrtc-media.ts](packages/web-sdk/src/webrtc-media.ts): SmallWebRTC signaling (offer/ICE over HTTP) and mic/speaker handling
 - [packages/web-sdk/README.md](packages/web-sdk/README.md): short API overview
@@ -41,15 +42,18 @@ Key rules for code that integrates Relay:
 - [runtime/src/relay_runtime/tool_agent.py](runtime/src/relay_runtime/tool_agent.py): `ToolUsingAgent` — system prompt + read-only tools + `present_ui` + the app's advertised screen actions (`ui_*` tools, preferred over drawing new UI) + side-effecting tools as approval proposals; up to 4 parallel tool rounds; the base for every manifest agent
 - [runtime/src/relay_runtime/hitl_manager.py](runtime/src/relay_runtime/hitl_manager.py): approvals (pending/granted/rejected, optional verify tool, follow-up turns `[Action approved|rejected|failed]`); saved forms are recorded as approvals granted `via: form_submit`
 - [runtime/src/relay_runtime/ui_surfaces.py](runtime/src/relay_runtime/ui_surfaces.py): `present_ui` model tool schema, `sanitize_present_ui_arguments`, `model_tools_from_registry`, form-submission formatting
-- [runtime/src/relay_runtime/session_manager.py](runtime/src/relay_runtime/session_manager.py): one actor queue per session; routes each session to the runtime for its `agent_id`; text and voice turns, barge-in, approvals, turn-failure recovery, idle-session cleanup
+- [runtime/src/relay_runtime/session_manager.py](runtime/src/relay_runtime/session_manager.py): one actor queue per session; routes each session to its runtime (`runtime_resolver` — a project's own agent, tools and model key — else the gateway-wide runtime for its `agent_id`); text and voice turns, barge-in, approvals, turn-failure recovery, idle-session cleanup
 - [runtime/src/relay_runtime/model_usage.py](runtime/src/relay_runtime/model_usage.py): token usage per model call as `METRIC` `model.usage` events; cost from `RELAY_MODEL_PRICES`; session totals in the timeline
 - [runtime/src/relay_runtime/tool_registry.py](runtime/src/relay_runtime/tool_registry.py): tool definitions with JSON schemas and read-only / draft / side-effecting classification
-- [services/gateway/src/relay_gateway](services/gateway/src/relay_gateway): FastAPI routes (`POST /dev/sessions`, `WS /ws/sessions/{id}`, WebRTC offer/ICE, `/dev/sessions/{id}/timeline`); `deps.py` loads `$RELAY_AGENTS_DIR` manifests at startup; `add_tool_agent(agent_id, …)` registers custom Python agents
+- [services/gateway/src/relay_gateway](services/gateway/src/relay_gateway): FastAPI gateway in layers — `controllers/` (`POST /v1/sessions`, `/v1/auth/device/*`, `/v1/me`, `/v1/projects/{id}/keys|agents|secrets`, `WS /ws/sessions/{id}`, WebRTC offer/ICE, `/admin`, `/metrics`; `POST /dev/sessions` only with `RELAY_DEV_SESSIONS=1`) → `services/` → `repositories/`; `core/container.py` wires them and loads `$RELAY_AGENTS_DIR` manifests at startup; `add_tool_agent(agent_id, …)` registers custom Python agents
 - [adapters/observability/prometheus](adapters/observability/prometheus/src/relay_adapter_observability_prometheus/bridge.py) / [adapters/observability/otel](adapters/observability/otel/src/relay_adapter_observability_otel/bridge.py): Prometheus metrics (`GET /metrics`) and OpenTelemetry traces (one trace per session = Relay `trace_id`), both derived from the event stream via a `"*"` subscription; no payload data in spans
-- [services/gateway/src/relay_gateway/logging_setup.py](services/gateway/src/relay_gateway/logging_setup.py): log handler — redacts tokens/keys in every record (incl. access log), `RELAY_LOG_FORMAT=json` for JSON lines with `session_id`/`turn_id`/`agent_id`
-- [services/gateway/src/relay_gateway/routes/admin.py](services/gateway/src/relay_gateway/routes/admin.py): operator API + inspector page (`/admin`, `RELAY_ADMIN_TOKEN`); [runtime/src/relay_runtime/session_audit.py](runtime/src/relay_runtime/session_audit.py) builds session summaries and the approvals/saves audit trail from stored events
+- [services/gateway/src/relay_gateway/core/logs.py](services/gateway/src/relay_gateway/core/logs.py): log handler — redacts tokens/keys in every record (incl. access log), `RELAY_LOG_FORMAT=json` for JSON lines with `session_id`/`turn_id`/`agent_id`
+- [services/gateway/src/relay_gateway/controllers/admin_controller.py](services/gateway/src/relay_gateway/controllers/admin_controller.py): operator API + inspector page (`/admin`, `RELAY_ADMIN_TOKEN`); [runtime/src/relay_runtime/session_audit.py](runtime/src/relay_runtime/session_audit.py) builds session summaries and the approvals/saves audit trail from stored events
 - [runtime/src/relay_runtime/event_redaction.py](runtime/src/relay_runtime/event_redaction.py): what the event log may keep (`RELAY_EVENT_STORE_REDACT=text,data`); retention via `RELAY_EVENT_RETENTION_DAYS`
 - [infra/observability/](infra/observability/alerts.yml): Prometheus scrape config + alert rules, Grafana dashboard; `infra/docker/docker-compose.observability.yml` runs both locally
+- [packages/cli](packages/cli/README.md): `relay` CLI (npm: `@sumukhj1219-wkt-org/relay-cli`) — `login` (browser device-code flow → account token in `~/.config/relay/credentials.json`), `projects`, `keys create --kind publishable|secret`, `origins set`, `agents push|list|delete`, `secrets set|list|unset openai`, `tools secret`
+- [services/gateway/src/relay_gateway/services/auth_service.py](services/gateway/src/relay_gateway/services/auth_service.py) / [device_login_service.py](services/gateway/src/relay_gateway/services/device_login_service.py) / [project_service.py](services/gateway/src/relay_gateway/services/project_service.py): accounts, API keys (`rat_`/`rsk_`/`rpk_`), device login, projects; sessions start with `POST /v1/sessions` + a project key
+- [services/gateway/src/relay_gateway/services/project_agent_service.py](services/gateway/src/relay_gateway/services/project_agent_service.py) / [secret_service.py](services/gateway/src/relay_gateway/services/secret_service.py): per-project agents, runtimes (own tools URL + model key), SSRF check on tools URLs, encrypted secrets; signature verification example in [examples/sales-crm/tools/src/crm_tools_api/relay_signature.py](examples/sales-crm/tools/src/crm_tools_api/relay_signature.py)
 - [adapters/README.md](adapters/README.md): which adapter implements which port (Pipecat SmallWebRTC, OpenAI, Deepgram, Silero, Postgres, Redis, HTTP tools)
 - [adapters/realtime/pipecat/ARCHITECTURE.md](adapters/realtime/pipecat/ARCHITECTURE.md): control plane vs media plane
 
@@ -61,8 +65,8 @@ Key rules for code that integrates Relay:
 - [examples/sales-crm/frontend/components/relay/surfaces.tsx](examples/sales-crm/frontend/components/relay/surfaces.tsx): shadcn renderers (Table with filter/sort/CSV, Chart, Card, comparison, markdown, Alert, forms)
 - [examples/sales-crm/tools/src/crm_tools_api/tools.py](examples/sales-crm/tools/src/crm_tools_api/tools.py): every tool defined once (function, description, JSON schema, classification) — 10 reads and 7 side-effecting writes (create/update deals, contacts, accounts; log activities; delete deals) — served as `GET /tools` + `POST /tools/{name}` on :8091; data in SQLite ([db.py](examples/sales-crm/tools/src/crm_tools_api/db.py), `CRM_DB_PATH`)
 - [examples/sales-crm/frontend/components/relay/approval-dialog.tsx](examples/sales-crm/frontend/components/relay/approval-dialog.tsx): approval dialog for proposed changes
-- [agents/sales-crm.yaml](agents/sales-crm.yaml): the whole agent — a manifest (`agent_id` `sales-crm`) + [prompt](agents/sales-crm.prompt.md); see [agents/README.md](agents/README.md) for the format
-- [services/gateway/src/relay_gateway/manifests.py](services/gateway/src/relay_gateway/manifests.py): manifest parsing, tool discovery, agent loading at startup
+- [agents/sales-crm.yaml](agents/sales-crm.yaml): the whole agent — a manifest (`agent_id` `sales-crm`) + [prompt](agents/sales-crm.prompt.md); see [agents/README.md](agents/README.md) for the format. This folder holds gateway-wide agents used by local dev sessions; a customer's agent is the same file with a literal `tools_url`, uploaded with `relay agents push`
+- [services/gateway/src/relay_gateway/services/agent_service.py](services/gateway/src/relay_gateway/services/agent_service.py): manifest parsing, tool discovery, agent loading at startup
 
 ## Reference example: mortgage servicing (custom flows)
 
@@ -76,8 +80,10 @@ Key rules for code that integrates Relay:
 ## Running it
 
 - [README.md](README.md): repository layout, Docker Compose quick start (gateway :8080, mortgage tools :8090, CRM tools :8091, mortgage UI :3000, CRM UI :3002), test commands
-- [packages/web-sdk/docs/03-reference.md](packages/web-sdk/docs/03-reference.md): every gateway endpoint, event, error code, surface spec and **configuration variable** (with defaults)
+- [packages/web-sdk/docs/03-reference.md](packages/web-sdk/docs/03-reference.md): customer-facing reference — endpoints an app uses, events, error codes, surface specs
+- [docs/operating-the-gateway.md](docs/operating-the-gateway.md): operator guide — every **configuration variable** (with defaults), `/admin`, `/metrics`, observability, gateway-wide and custom Python agents
 - [agents/README.md](agents/README.md): agent manifest format
+- [packages/cli/README.md](packages/cli/README.md): every `relay` command
 
 ## Optional
 

@@ -16,7 +16,7 @@
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "@relay/web-sdk": "workspace:*",
+    "@sumukhj1219-wkt-org/relay-web-sdk": "workspace:*",
     "@tanstack/react-table": "^9.2.6",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",

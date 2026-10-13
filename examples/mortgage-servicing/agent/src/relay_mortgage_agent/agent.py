@@ -363,6 +363,31 @@ class MortgageServicingAgent(AgentAdapter):
         ):
             yield token
 
+    def state_after_commit(
+        self,
+        *,
+        state: dict[str, Any],
+        tool_name: str,
+        arguments: dict[str, Any],
+        commit_result: dict[str, Any],
+        verify_result: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """After a verified correction: mark the draft committed and show the refreshed case."""
+        del tool_name, commit_result
+        mortgage = verify_result.get("mortgage")
+        if not isinstance(mortgage, dict):
+            return None
+        draft = dict(state.get("correction_draft") or {})
+        draft["status"] = "committed"
+        draft["mortgage_id"] = arguments.get("mortgage_id") or draft.get("mortgage_id")
+        return {
+            **state,
+            "correction_draft": draft,
+            "screen": "mortgage_case",
+            "workflow": "correction_committed",
+            "case_summary": {**dict(state.get("case_summary") or {}), **mortgage},
+        }
+
     async def handle_runtime_event(
         self,
         session_id: str,

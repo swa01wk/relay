@@ -4,7 +4,7 @@ import {
   attachSmallWebRtcMedia,
   type SmallWebRtcSession,
   type VoiceConnectionState,
-} from "./webrtc-media";
+} from "./webrtc-media.js";
 
 export {
   FORM_SUBMIT_EVENT,
@@ -17,7 +17,7 @@ export {
   registerPlaygroundSurfaces,
   submitForm,
   surfaceToCsv,
-} from "./ui-surfaces";
+} from "./ui-surfaces.js";
 export type {
   PresentUiParams,
   UiCardsSurface,
@@ -33,7 +33,7 @@ export type {
   UiSurface,
   UiTableColumn,
   UiTableSurface,
-} from "./ui-surfaces";
+} from "./ui-surfaces.js";
 
 export type RelayConnectionState = "disconnected" | "connecting" | "ready" | "error";
 
@@ -54,9 +54,16 @@ export type DevSessionResult = {
 
 export type RelaySessionOptions = {
   gatewayUrl: string;
-  projectId: string;
+  /**
+   * Project API key. In a browser use the project's publishable key (`rpk_…`, from
+   * `relay keys create --kind publishable`); never ship a secret key (`rsk_…`) to a browser.
+   * The key decides the project, so `projectId` is not needed.
+   */
+  apiKey?: string;
+  /** Only for local development without a key (gateway started with RELAY_DEV_SESSIONS=1). */
+  projectId?: string;
   agentId: string;
-  /** Use existing dev session instead of POST /dev/sessions */
+  /** Use an existing session instead of creating one */
   sessionId?: string;
   devToken?: string;
   /** Phase 2: attach SmallWebRTC after RP session is ready */
@@ -72,7 +79,7 @@ export type ActionHandler = (
 
 /** Describes an action so the agent can call it to change what the user sees. */
 export type ActionSpec = {
-  /** What the action does, written for the AI (e.g. "Filter the deals table on the dashboard"). */
+  /** What the action does, written for the AI (e.g. "Filter the orders table on the dashboard"). */
   description: string;
   /** JSON Schema for the params: `{ type: "object", properties: {...}, required?: [...] }`. */
   parameters?: Record<string, unknown>;
@@ -155,6 +162,47 @@ export async function createDevSession(
     tokenExpiresAt: body.token_expires_at,
     events: body.events,
   };
+}
+
+/** Start a session in the project the API key belongs to (`POST /v1/sessions`). */
+export async function createSession(
+  gatewayUrl: string,
+  params: { apiKey: string; agentId: string },
+): Promise<DevSessionResult> {
+  const res = await fetch(`${gatewayUrl.replace(/\/$/, "")}/v1/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${params.apiKey}` },
+    body: JSON.stringify({ agent_id: params.agentId }),
+  });
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((body: { detail?: unknown }) => (typeof body.detail === "string" ? body.detail : ""))
+      .catch(() => "");
+    throw new Error(`session failed: ${res.status}${detail ? ` — ${detail}` : ""}`);
+  }
+  const body = (await res.json()) as {
+    session_id: string;
+    token: string;
+    token_expires_at: string;
+    events: DevSessionResult["events"];
+  };
+  return {
+    sessionId: body.session_id,
+    devToken: body.token,
+    tokenExpiresAt: body.token_expires_at,
+    events: body.events,
+  };
+}
+
+function startSession(baseUrl: string, options: RelaySessionOptions): Promise<DevSessionResult> {
+  if (options.apiKey) {
+    return createSession(baseUrl, { apiKey: options.apiKey, agentId: options.agentId });
+  }
+  if (!options.projectId) {
+    throw new Error("createRelaySession needs `apiKey` (or `projectId` for a local dev gateway)");
+  }
+  return createDevSession(baseUrl, { projectId: options.projectId, agentId: options.agentId });
 }
 
 export function createRelaySession(options: RelaySessionOptions): RelaySession {
@@ -365,10 +413,7 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
     setState("connecting");
     try {
       if (!sessionId || !devToken) {
-        const created = await createDevSession(baseUrl, {
-          projectId: options.projectId,
-          agentId: options.agentId,
-        });
+        const created = await startSession(baseUrl, options);
         sessionId = created.sessionId;
         devToken = created.devToken;
         for (const event of created.events) emit(event);

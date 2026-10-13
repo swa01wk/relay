@@ -2,10 +2,10 @@
 
 Manifest::
 
-    agent_id: sales-crm
-    tools_url: ${RELAY_CRM_TOOLS_URL:-http://localhost:8091}
-    system_prompt_file: sales-crm.prompt.md     # or inline `system_prompt: |`
-    instructions: "Pipeline by stage → bar chart; …"   # optional present_ui hints
+    agent_id: orders
+    tools_url: ${RELAY_ORDERS_TOOLS_URL:-http://localhost:8092}
+    system_prompt_file: orders.prompt.md        # or inline `system_prompt: |`
+    instructions: "Orders over time → line chart; …"   # optional present_ui hints
     tool_timeout_seconds: 30                      # optional
 
 The tools service must answer ``GET {tools_url}/tools`` with
@@ -26,7 +26,7 @@ from typing import Any
 import httpx
 import yaml
 
-from relay_adapter_tools_http import HttpToolExecutor
+from relay_adapter_tools_http import HttpToolExecutor, signature_headers
 from relay_runtime import (
     AgentRuntime,
     ModelRouter,
@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 _REQUIRED = ("agent_id", "tools_url")
+_AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
 class ManifestError(ValueError):
@@ -56,6 +57,7 @@ class AgentManifest:
     instructions: str = ""
     tool_timeout_seconds: float = 30.0
     source: str = ""
+    model: str | None = None  # model id for this agent; default is the provider's
 
 
 def _expand_env(value: str) -> str:
@@ -64,36 +66,65 @@ def _expand_env(value: str) -> str:
 
 
 def parse_manifest(path: Path) -> AgentManifest:
+    """A manifest file from the operator's agents folder (``${VAR}`` expands, prompt files are read)."""
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise ManifestError(f"{path.name}: invalid YAML ({exc})") from exc
+    if isinstance(raw, dict) and raw.get("system_prompt_file"):
+        prompt_path = (path.parent / str(raw["system_prompt_file"])).resolve()
+        if not prompt_path.is_file():
+            raise ManifestError(f"{path.name}: system_prompt_file not found: {raw['system_prompt_file']}")
+        raw = {**raw, "system_prompt": prompt_path.read_text(encoding="utf-8")}
+    return manifest_from_mapping(raw, source=path.name, expand_env=True)
+
+
+def parse_manifest_text(text: str, *, source: str = "manifest", system_prompt: str | None = None) -> AgentManifest:
+    """A manifest uploaded by a customer. Nothing is read from the gateway: no ``${VAR}``
+    expansion (that would expose the operator's environment) and no prompt files — the client
+    sends the prompt text itself."""
+    try:
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ManifestError(f"{source}: invalid YAML ({exc})") from exc
+    if isinstance(raw, dict) and system_prompt is not None:
+        raw = {**raw, "system_prompt": system_prompt}
+    return manifest_from_mapping(raw, source=source, expand_env=False)
+
+
+def manifest_from_mapping(raw: Any, *, source: str, expand_env: bool) -> AgentManifest:
     if not isinstance(raw, dict):
-        raise ManifestError(f"{path.name}: expected a mapping")
+        raise ManifestError(f"{source}: expected a mapping")
     missing = [key for key in _REQUIRED if not raw.get(key)]
     if missing:
-        raise ManifestError(f"{path.name}: missing {', '.join(missing)}")
-
+        raise ManifestError(f"{source}: missing {', '.join(missing)}")
+    agent_id = str(raw["agent_id"]).strip()
+    if not _AGENT_ID.match(agent_id):
+        raise ManifestError(f"{source}: agent_id may use letters, digits, '-' and '_' (max 64), got {agent_id!r}")
     prompt = raw.get("system_prompt")
-    prompt_file = raw.get("system_prompt_file")
-    if prompt_file:
-        prompt_path = (path.parent / str(prompt_file)).resolve()
-        if not prompt_path.is_file():
-            raise ManifestError(f"{path.name}: system_prompt_file not found: {prompt_file}")
-        prompt = prompt_path.read_text(encoding="utf-8")
     if not prompt or not str(prompt).strip():
-        raise ManifestError(f"{path.name}: set system_prompt or system_prompt_file")
+        raise ManifestError(f"{source}: set system_prompt or system_prompt_file")
 
-    tools_url = _expand_env(str(raw["tools_url"])).strip().rstrip("/")
+    tools_url = str(raw["tools_url"])
+    if expand_env:
+        tools_url = _expand_env(tools_url)
+    elif _ENV_REF.search(tools_url):
+        raise ManifestError(f"{source}: tools_url must be a literal URL (no ${{VAR}} references)")
+    tools_url = tools_url.strip().rstrip("/")
     if not tools_url.startswith(("http://", "https://")):
-        raise ManifestError(f"{path.name}: tools_url must be http(s), got {tools_url!r}")
+        raise ManifestError(f"{source}: tools_url must be http(s), got {tools_url!r}")
+    try:
+        timeout = float(raw.get("tool_timeout_seconds") or 30.0)
+    except (TypeError, ValueError):
+        raise ManifestError(f"{source}: tool_timeout_seconds must be a number") from None
     return AgentManifest(
-        agent_id=str(raw["agent_id"]).strip(),
+        agent_id=agent_id,
         tools_url=tools_url,
         system_prompt=str(prompt).strip(),
         instructions=str(raw.get("instructions") or "").strip(),
-        tool_timeout_seconds=float(raw.get("tool_timeout_seconds") or 30.0),
-        source=path.name,
+        tool_timeout_seconds=min(max(timeout, 1.0), 120.0),
+        source=source,
+        model=str(raw["model"]).strip() if raw.get("model") else None,
     )
 
 
@@ -153,13 +184,15 @@ async def discover_tools(
     attempts: int = 10,
     delay_seconds: float = 2.0,
     transport: httpx.AsyncBaseTransport | None = None,
+    signing_secret: str | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch ``GET {tools_url}/tools``, retrying while the tools service starts."""
     last_error: Exception | None = None
     async with httpx.AsyncClient(timeout=10.0, transport=transport) as client:
         for attempt in range(1, attempts + 1):
             try:
-                response = await client.get(f"{tools_url}/tools")
+                headers = signature_headers(signing_secret, b"") if signing_secret else {}
+                response = await client.get(f"{tools_url}/tools", headers=headers)
                 response.raise_for_status()
                 tools = response.json().get("tools")
                 if not isinstance(tools, list):
