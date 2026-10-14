@@ -10,19 +10,20 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from relay_gateway.core.container import stream_service
+from relay_gateway.core.http import offered_session_protocol, session_token
 
 router = APIRouter(tags=["sessions-ws"])
 logger = logging.getLogger(__name__)
 
 
 @router.websocket("/ws/sessions/{session_id}")
-async def session_websocket(session_id: str, websocket: WebSocket, token: str) -> None:
-    refusal = stream_service.refusal_code(session_id, token)
+async def session_websocket(session_id: str, websocket: WebSocket, token: str | None = None) -> None:
+    refusal = stream_service.refusal_code(session_id, session_token(websocket, token))
     if refusal is not None:
         await websocket.close(code=refusal)
         return
 
-    await websocket.accept()
+    await websocket.accept(subprotocol=offered_session_protocol(websocket))
 
     outbound: asyncio.Queue[str | None] = asyncio.Queue()
 

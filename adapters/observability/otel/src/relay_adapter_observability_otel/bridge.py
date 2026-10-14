@@ -46,7 +46,7 @@ class RelayIdGenerator(RandomIdGenerator):
     def generate_trace_id(self) -> int:
         chosen, self.next_trace_id = self.next_trace_id, None
         return chosen or super().generate_trace_id()
-
+        
 
 def tracer_provider_from_env() -> TracerProvider | None:
     """A provider exporting OTLP/HTTP when ``OTEL_EXPORTER_OTLP_ENDPOINT`` (or the traces-specific

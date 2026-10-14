@@ -16,6 +16,11 @@ class SessionRepository:
     def is_live(self, session_id: str) -> bool:
         return self._manager.get(session_id) is not None
 
+    def end_user(self, session_id: str) -> dict | None:
+        """The end user the app started this session for, if it said."""
+        session = self._manager.get(session_id)
+        return session.end_user if session else None
+
     def count(self) -> int:
         return len(self._manager._sessions)
 

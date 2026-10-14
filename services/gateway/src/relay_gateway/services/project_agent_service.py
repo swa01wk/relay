@@ -10,6 +10,7 @@ import asyncio
 import ipaddress
 import logging
 import os
+import socket
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
@@ -76,6 +77,24 @@ async def check_tools_url(url: str) -> None:
             raise BadRequest("tools_url must be reachable from the public internet (it resolves to a private address)")
 
 
+async def public_address(host: str, port: int) -> str:
+    """The address to connect to for a customer's tools host, checked at call time. Every
+    address the name resolves to must be public; the first one is used (and pinned)."""
+    try:
+        infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError:
+        raise BadRequest(f"tools host cannot be resolved: {host}") from None
+    addresses = [info[4][0] for info in infos]
+    if not addresses or any(not ipaddress.ip_address(a).is_global for a in addresses):
+        raise BadRequest("tools host resolves to a private address; refusing to call it")
+    return addresses[0]
+
+
+def _address_guard():
+    # Local development (private tools URLs allowed) connects normally.
+    return None if _private_urls_allowed() else public_address
+
+
 class _Entry:
     def __init__(self, runtime: AgentRuntime, closers: list[Any]) -> None:
         self.runtime = runtime
@@ -90,11 +109,13 @@ class ProjectAgentService:
         *,
         model_provider_factory: ModelProviderFactory,
         is_live: Callable[[str], bool],
+        user_for_session: Callable[[str], dict[str, Any] | None] | None = None,
     ) -> None:
         self._agents = agents
         self._secrets = secret_service
         self._model_provider_factory = model_provider_factory
         self._is_live = is_live
+        self._user_for_session = user_for_session
         self._cache: dict[tuple[str, str], _Entry] = {}
         self._by_session: dict[str, _Entry] = {}
         self._retired: list[_Entry] = []
@@ -138,7 +159,11 @@ class ProjectAgentService:
         signing_secret = await self._secrets.tools_signing_secret(project_id)
         try:
             return await discover_tools(
-                tools_url, attempts=1, transport=self.http_transport, signing_secret=signing_secret
+                tools_url,
+                attempts=1,
+                transport=self.http_transport,
+                signing_secret=signing_secret,
+                address_guard=_address_guard(),
             )
         except ManifestError as error:
             raise BadRequest(f"{error}. The tools service must answer GET {tools_url}/tools") from None
@@ -169,6 +194,8 @@ class ProjectAgentService:
             base_url=agent.tools_url,
             timeout_seconds=agent.tool_timeout_seconds,
             signing_secret=signing_secret,
+            user_for_session=self._user_for_session,
+            address_guard=_address_guard(),
             transport=self.http_transport,
         )
         manifest = AgentManifest(

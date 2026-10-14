@@ -52,7 +52,18 @@ from relay_gateway.repositories.device_login_repository import (
     MemoryDeviceLoginRepository,
     PostgresDeviceLoginRepository,
 )
+from relay_gateway.repositories.email_token_repository import (
+    EmailTokenRepository,
+    MemoryEmailTokenRepository,
+    PostgresEmailTokenRepository,
+)
 from relay_gateway.repositories.event_repository import EventRepository
+from relay_gateway.integrations.email import email_sender_from_env
+from relay_gateway.repositories.rate_limit_repository import (
+    MemoryRateLimitRepository,
+    RateLimitRepository,
+    RedisRateLimitRepository,
+)
 from relay_gateway.repositories.project_agent_repository import (
     MemoryProjectAgentRepository,
     PostgresProjectAgentRepository,
@@ -64,6 +75,7 @@ from relay_gateway.repositories.project_secret_repository import (
     ProjectSecretRepository,
 )
 from relay_gateway.repositories.session_repository import SessionRepository
+from relay_gateway.services.account_email_service import AccountEmailService
 from relay_gateway.services.admin_service import AdminService
 from relay_gateway.services.agent_service import load_agent_manifests
 from relay_gateway.services.auth_service import AuthService
@@ -71,7 +83,9 @@ from relay_gateway.services.device_login_service import DeviceLoginService
 from relay_gateway.services.metrics_service import MetricsService
 from relay_gateway.core.crypto import SecretBox
 from relay_gateway.services.project_agent_service import ProjectAgentService
+from relay_gateway.services.key_alert_service import KeyAlertService
 from relay_gateway.services.project_service import ProjectService
+from relay_gateway.services.rate_limit_service import RateLimitService
 from relay_gateway.services.secret_service import SecretService
 from relay_gateway.services.realtime_service import RealtimeService
 from relay_gateway.services.retention_service import RetentionService
@@ -218,6 +232,9 @@ api_key_repository: ApiKeyRepository = PostgresApiKeyRepository(database) if dat
 device_login_repository: DeviceLoginRepository = (
     PostgresDeviceLoginRepository(database) if database else MemoryDeviceLoginRepository()
 )
+email_token_repository: EmailTokenRepository = (
+    PostgresEmailTokenRepository(database) if database else MemoryEmailTokenRepository()
+)
 project_agent_repository: ProjectAgentRepository = (
     PostgresProjectAgentRepository(database) if database else MemoryProjectAgentRepository()
 )
@@ -254,9 +271,24 @@ if realtime_transport is not None:
     )
 
 # Services: what controllers call.
-auth_service = AuthService(account_repository, api_key_repository)
+# Rate-limit counters: shared through Redis when several gateway processes run.
+rate_limit_repository: RateLimitRepository = (
+    RedisRateLimitRepository(os.environ["RELAY_REDIS_URL"])
+    if os.environ.get("RELAY_REDIS_URL")
+    else MemoryRateLimitRepository()
+)
+rate_limit_service = RateLimitService(rate_limit_repository)
+auth_service = AuthService(account_repository, api_key_repository, rate_limit_service)
 project_service = ProjectService(account_repository, api_key_repository, auth_service)
-device_login_service = DeviceLoginService(device_login_repository, auth_service, project_service)
+# SMTP when RELAY_SMTP_HOST is set; otherwise emails are printed to the gateway log (development).
+email_sender = email_sender_from_env()
+account_email_service = AccountEmailService(
+    account_repository, email_token_repository, auth_service, email_sender, rate_limit_service
+)
+key_alert_service = KeyAlertService(api_key_repository, account_repository, email_sender, rate_limit_service)
+device_login_service = DeviceLoginService(
+    device_login_repository, auth_service, project_service, rate_limit_service, account_email_service
+)
 secret_service = SecretService(project_secret_repository, SecretBox())
 # Sessions started with a project key run on that project's own agent, tools and model key.
 project_agent_service = ProjectAgentService(
@@ -264,11 +296,18 @@ project_agent_service = ProjectAgentService(
     secret_service,
     model_provider_factory=lambda api_key, model: OpenAIProvider(api_key=api_key, model=model),
     is_live=session_repository.is_live,
+    user_for_session=session_repository.end_user,
 )
 secret_service.on_change = project_agent_service.invalidate
 session_manager.runtime_resolver = lambda session: project_agent_service.runtime_of_session(session.session_id)
 session_service = SessionService(
-    session_manager, session_repository, event_repository, project_service, project_agent_service
+    session_manager,
+    session_repository,
+    event_repository,
+    project_service,
+    project_agent_service,
+    rate_limit_service,
+    key_alert_service,
 )
 stream_service = StreamService(session_manager, session_repository)
 realtime_service = RealtimeService(session_manager)
@@ -344,5 +383,7 @@ async def shutdown() -> None:
         await event_store.close()
     if database is not None:
         await database.close()
+    if isinstance(rate_limit_repository, RedisRateLimitRepository):
+        await rate_limit_repository.aclose()
     if isinstance(session_lock, RedisSessionLock):
         await session_lock.close()

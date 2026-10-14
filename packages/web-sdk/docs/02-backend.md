@@ -154,19 +154,44 @@ relay tools secret                   # signing secret for the next step
 
 - Model calls for your project use **your** API key and are billed to you by the model provider. Without one, sessions are refused (`409`).
 - Re-run `relay agents push` after changing the manifest, the prompt or the tools list. Conversations already running keep the version they started with; new sessions get the new one.
-- **Verify Relay's signature** so nobody else can call your tools. Every request from Relay carries `X-Relay-Timestamp`, `X-Relay-Signature: sha256=<hex>` and `X-Relay-Session`. The signature is `HMAC-SHA256(signing_secret, "<timestamp>." + raw_body)`; reject a wrong signature or a timestamp older than 5 minutes:
+- **Verify Relay's signature** so nobody else can call your tools. Every request from Relay carries:
+
+  | Header | Meaning |
+  |---|---|
+  | `X-Relay-Timestamp` | Seconds since 1970; reject anything older than 5 minutes |
+  | `X-Relay-Session` | The Relay session the call belongs to |
+  | `X-Relay-User` | The user your server started the session for, as JSON `{"id", "attributes"?}`; absent when it said none |
+  | `X-Relay-Signature-V2` | `sha256=` + HMAC-SHA256 with your signing secret over the lines below |
+  | `X-Relay-Signature` | Older signature over timestamp + body only; prefer v2 |
+
+  ```text
+  relay-v2
+  <X-Relay-Timestamp>
+  <operation>            tools.list for GET /tools, tools.call:<name> for POST /tools/<name> (from YOUR route)
+  <X-Relay-Session>
+  <X-Relay-User>         exactly as received; empty line when absent
+  <raw body>             empty for GET /tools
+  ```
 
 ```python
-import hashlib, hmac, time
+import hashlib, hmac, json, time
 
-def relay_signature_is_valid(secret: str, timestamp: str, signature: str, body: bytes) -> bool:
+def relay_call_is_valid(secret: str, headers, operation: str, body: bytes) -> bool:
+    timestamp = headers.get("X-Relay-Timestamp", "")
     if not timestamp.isdigit() or abs(time.time() - int(timestamp)) > 300:
         return False
-    expected = hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(signature, f"sha256={expected}")
+    signed = "\n".join(("relay-v2", timestamp, operation,
+                        headers.get("X-Relay-Session", ""), headers.get("X-Relay-User", ""))).encode()
+    expected = hmac.new(secret.encode(), signed + b"\n" + body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(headers.get("X-Relay-Signature-V2", ""), f"sha256={expected}")
+
+def relay_user(headers) -> dict | None:   # only after relay_call_is_valid(...) is True
+    raw = headers.get("X-Relay-User", "")
+    return json.loads(raw) if raw else None
 ```
 
-  With FastAPI, read the raw body (`await request.body()`) in a dependency on both routes and return `401` when the check fails. `GET /tools` is signed too, with an empty body. Keep the secret in an environment variable; `relay tools secret --rotate` replaces it.
+  Return `401` when the check fails. Build `operation` from your own route, never from a header — that is what stops a captured call to `list_orders` from being replayed against `delete_order`. Keep the secret in an environment variable; `relay tools secret --rotate` replaces it.
+- **Return only the asking user's data.** For per-user data, filter every query by `relay_user(headers)["id"]` and refuse calls without a user (`401`), so a session your server did not start can never read anyone's records. Your app's own login cookie does **not** reach the tools service — calls come from Relay, not the browser; the user travels in `X-Relay-User` instead.
 
 ## 4. Verify (do all of these)
 

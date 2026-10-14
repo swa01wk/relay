@@ -1,8 +1,8 @@
 {
   "name": "@sumukhj1219-wkt-org/relay-cli",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "type": "module",
-  "description": "Relay command line: log in, manage projects and API keys.",
+  "description": "Relay command line: sign in, manage devices, projects, API keys, agents and secrets.",
   "bin": {
     "relay": "bin/relay.mjs"
   },

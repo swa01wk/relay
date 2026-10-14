@@ -26,6 +26,7 @@ _DATA_PREFIXES = ("TOOL_CALL_", "ACTION_", "STATE_", "APPROVAL_", "COMMIT_", "AP
 _DATA_KEEP = {
     "name", "action", "action_id", "approval_id", "tool_name", "commit_id", "form_id", "verified", "via",
     "lifecycle_stage", "error", "code", "message", "reason", "status", "ok", "version", "based_on_version",
+    "end_user_id",
 }  # fmt: skip
 
 

@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { main, readManifest, readSecret } from "./cli.mjs";
+import { createServer } from "node:http";
+
+import { authed, main, readManifest, readSecret } from "./cli.mjs";
 import { clearCredentials, credentialsPath, gatewayUrl, readCredentials, writeCredentials } from "./config.mjs";
 
 function capture() {
@@ -70,4 +72,57 @@ test("manifests carry their prompt file; secrets come from stdin, never argument
   assert.match(lines.join("\n"), /do not pass the key as an argument/);
   delete process.env.RELAY_TOKEN;
   delete process.env.RELAY_PROJECT;
+});
+
+test("a change the gateway wants confirmed asks for the password once, then retries", async () => {
+  const seen = [];
+  let confirmed = false;
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      seen.push(`${req.method} ${req.url} ${req.headers.authorization}`);
+      if (req.url === "/v1/auth/reauth") {
+        confirmed = JSON.parse(body).password === "the password";
+        res.writeHead(confirmed ? 200 : 401, { "content-type": "application/json" });
+        return res.end(JSON.stringify(confirmed ? { status: "ok" } : { detail: "wrong password" }));
+      }
+      if (!confirmed) {
+        res.writeHead(403, { "content-type": "application/json", "x-relay-reauth": "required" });
+        return res.end(JSON.stringify({ detail: "enter your password to confirm this change" }));
+      }
+      res.writeHead(201, { "content-type": "application/json" });
+      res.end(JSON.stringify({ key: "rsk_new" }));
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const saved = { gateway: `http://127.0.0.1:${server.address().port}`, token: "rat_x" };
+  try {
+    const prompts = [];
+    const created = await authed(saved, "/v1/projects/p/keys", { method: "POST", body: {} }, async (p) => {
+      prompts.push(p);
+      return "the password";
+    });
+    assert.deepEqual(created, { key: "rsk_new" });
+    assert.equal(prompts.length, 1);
+    assert.deepEqual(seen, [
+      "POST /v1/projects/p/keys Bearer rat_x",
+      "POST /v1/auth/reauth Bearer rat_x",
+      "POST /v1/projects/p/keys Bearer rat_x",
+    ]);
+    // Plain errors are not retried and never prompt.
+    confirmed = false;
+    await assert.rejects(authed(saved, "/v1/projects/p/keys", { method: "POST", body: {} }, async () => "nope"), /wrong password/);
+  } finally {
+    server.close();
+  }
+});
+
+test("password reset works signed out and only points at the gateway's own page", async () => {
+  process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), "relay-cli-"));
+  delete process.env.RELAY_TOKEN;
+  const lines = [];
+  const out = { log: (m) => lines.push(String(m)), error: (m) => lines.push(String(m)) };
+  assert.equal(await main(["password", "reset", "--gateway", "https://relay.example.com/", "--no-browser"], out), 0);
+  assert.match(lines.join("\n"), /https:\/\/relay\.example\.com\/v1\/auth\/forgot-password/);
 });

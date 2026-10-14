@@ -32,6 +32,8 @@ def key_view(key: ApiKey) -> dict[str, Any]:
         "prefix": key.prefix,
         "created_at": key.created_at.isoformat(),
         "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
+        "last_used_ip": key.last_used_ip,
+        "addresses_seen": len(key.seen_ips),
         "revoked": key.revoked_at is not None,
     }
 

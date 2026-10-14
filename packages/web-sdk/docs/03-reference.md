@@ -7,9 +7,11 @@ Everything an app or tools service touches. `<gateway>` is your Relay address (t
 | Method & path | Purpose |
 |---|---|
 | `GET /health`, `GET /ready` | Liveness / readiness |
-| `POST /v1/sessions` | Start a session. `Authorization: Bearer <project key>` (publishable `rpk_…` from a browser, secret `rsk_…` from a server), body `{"agent_id"}`. The key decides the project, and `agent_id` must be one of that project's agents (`404` otherwise; `409` when the project has no model API key). Returns `session_id`, `token`, `token_expires_at`, `events`. `403` when a publishable key is used from an origin outside the project's allowed origins |
-| `POST /v1/auth/device` · `POST /v1/auth/device/token` · `GET/POST /v1/auth/device/verify` | `relay login`: start (returns `device_code`, `user_code`, `verification_uri_complete`), poll (`{"status":"pending"}` then, once, `{"status":"approved","token":"rat_…","email","project"}`), and the browser approval page (sign in or sign up) |
-| `GET /v1/me` · `POST /v1/auth/logout` | Account behind an account token; revoke that token |
+| `POST /v1/sessions` | Start a session. `Authorization: Bearer <project key>` (publishable `rpk_…` from a browser, secret `rsk_…` from a server), body `{"agent_id", "user"?}` — `user` (`{"id", "attributes"?}`, secret keys only; `403` with a publishable key) is sent to your tools service as `X-Relay-User` on every call. The key decides the project, and `agent_id` must be one of that project's agents (`404` otherwise; `409` when the project has no model API key). Returns `session_id`, `token`, `token_expires_at`, `events`. `403` when a publishable key is used from an origin outside the project's allowed origins |
+| `POST /v1/auth/device` · `POST /v1/auth/device/token` · `GET/POST /v1/auth/device/verify` | `relay login`: start (returns `device_code`, `user_code`, `verification_uri_complete`), poll with `{"device_code", "client_name"?}` (`{"status":"pending"}` then, once, `{"status":"approved","token":"rat_…","email","project"}`), and the browser approval page (sign in or sign up) |
+| `GET /v1/me` · `POST /v1/auth/logout` | Account behind an account token; sign out this device (`{"everywhere": true}`: every device) |
+| `GET /v1/auth/sessions` · `DELETE /v1/auth/sessions/{id}` | Devices signed in to the account (name, last use and address, expiry); sign one out |
+| `POST /v1/auth/reauth` · `POST /v1/auth/password` | Confirm the password for this device (`{"password"}`), needed for changes when the gateway answers `403` with `X-Relay-Reauth: required`; change the password (`{"current_password", "new_password"}`) — signs out every other device |
 | `GET/POST /v1/projects` · `PUT /v1/projects/{id}/origins` | List/create projects; set the origins allowed to use publishable keys (`{"allowed_origins": [...]}`; empty = any origin) |
 | `GET/POST /v1/projects/{id}/keys` · `DELETE /v1/projects/{id}/keys/{key_id}` | List, create (`{"kind": "publishable"\|"secret", "name"}`; the response is the only time `key` is returned) and revoke project keys. Account token required |
 | `GET/POST /v1/projects/{id}/agents` · `DELETE /v1/projects/{id}/agents/{agent_id}` | A project's agents. Push with `{"manifest": "<yaml text>", "system_prompt": "<text>"?}`; the gateway calls `GET <tools_url>/tools` and answers `{agent_id, tools_url, model, updated_at, tools: [names]}` or `400` with the reason. Account token required |
@@ -79,3 +81,14 @@ Field types for forms: `text`, `textarea`, `number`, `date`, `email`, `select` (
 Session: `createRelaySession(options)` → `connect`, `disconnect`, `sendText`, `on`, `onConnectionState`, `onVoiceState`, `onAudioLevel`, `connectVoice`, `disconnectVoice`, `setMicMuted`, `cancelVoiceUtterance`, `registerAction`, `sendState`, `onStateConflict`, `sendEvent`, `onApprovalRequested`, `grantApproval`, `rejectApproval`, and getters `connectionState`, `voiceState`, `sessionId`, `stateVersion`. Also `fetchHealth(gatewayUrl)`, `createDevSession(...)`.
 
 Surfaces: `registerPlaygroundSurfaces`, `submitForm`, `surfaceToCsv`, `normalizeUiSurface`, `normalizePresentUiParams`, `normalizeTableSurface`, `normalizeChartSurface`, constants `PRESENT_UI_ACTION`, `SHOW_TABLE_ACTION`, `FORM_SUBMIT_EVENT`, and the `Ui*` types.
+
+## Limits and sign-in rules
+
+- Over a rate limit the gateway answers `429` with a `Retry-After` header (seconds). Starting sessions: 120 per minute per key; with a publishable key also 30 per minute per visitor address.
+- 5 wrong passwords lock that sign-in for 15 minutes.
+- New accounts confirm their email from a link before the first sign-in. Forgot the password? Use the link on the sign-in page (or `relay password reset`); a reset signs out every device.
+- CLI tokens expire after 30 days, or 14 days unused; sign in again with `relay login`.
+- Creating keys, changing the model key, agents or allowed origins, and showing the tools signing secret need the password from the last 15 minutes. The CLI asks for it when needed.
+- Session tokens are sent as `Authorization: Bearer <token>` (HTTP) and as the WebSocket subprotocol `relay.token.<token>` next to `relay.v1`; the SDK does this for you.
+- `relay keys list` shows where each key was last used from. A secret key used from an address it has not used before emails the account owner.
+

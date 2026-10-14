@@ -41,6 +41,26 @@ CREATE TABLE IF NOT EXISTS relay_device_logins (
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Accounts that existed before email verification count as verified (the DEFAULT fills them
+-- once, when the column is added); new accounts start unverified.
+ALTER TABLE relay_accounts ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE relay_accounts ALTER COLUMN email_verified_at DROP DEFAULT;
+CREATE TABLE IF NOT EXISTS relay_email_tokens (
+    token_hash TEXT PRIMARY KEY,
+    account_id UUID NOT NULL REFERENCES relay_accounts (id),
+    purpose TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS relay_email_tokens_account ON relay_email_tokens (account_id, purpose);
+ALTER TABLE relay_api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE relay_api_keys ADD COLUMN IF NOT EXISTS last_used_ip TEXT;
+ALTER TABLE relay_api_keys ADD COLUMN IF NOT EXISTS reauthenticated_at TIMESTAMPTZ;
+ALTER TABLE relay_api_keys ADD COLUMN IF NOT EXISTS seen_ips TEXT[] NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS relay_api_keys_account ON relay_api_keys (account_id, kind);
+-- CLI tokens issued before expiry existed get the normal lifetime from their creation.
+UPDATE relay_api_keys SET expires_at = created_at + INTERVAL '30 days' WHERE kind = 'account' AND expires_at IS NULL;
 CREATE TABLE IF NOT EXISTS relay_project_agents (
     project_id TEXT NOT NULL REFERENCES relay_projects (id),
     agent_id TEXT NOT NULL,

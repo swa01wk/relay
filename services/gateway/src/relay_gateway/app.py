@@ -16,7 +16,7 @@ from relay_gateway.controllers import (
     stream_controller,
 )
 from relay_gateway.core.container import shutdown, startup
-from relay_gateway.core.errors import GatewayError
+from relay_gateway.core.errors import GatewayError, ReauthRequired, TooManyRequests
 
 
 def create_app() -> FastAPI:
@@ -44,7 +44,12 @@ def create_app() -> FastAPI:
     @app.exception_handler(GatewayError)
     async def _gateway_error(_request: Request, error: GatewayError) -> JSONResponse:
         # Services raise GatewayError; this is the one place it becomes an HTTP response.
-        return JSONResponse(status_code=error.status_code, content={"detail": error.detail})
+        headers: dict[str, str] = {}
+        if isinstance(error, TooManyRequests):
+            headers["Retry-After"] = str(error.retry_after)
+        if isinstance(error, ReauthRequired):
+            headers["X-Relay-Reauth"] = "required"
+        return JSONResponse(status_code=error.status_code, content={"detail": error.detail}, headers=headers)
 
     @app.on_event("startup")
     async def _startup() -> None:

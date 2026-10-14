@@ -1,6 +1,6 @@
 {
   "name": "@sumukhj1219-wkt-org/relay-web-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Relay Web SDK: voice + text AI assistant sessions, UI actions, shared state and generative UI surfaces. Coding agents: read AGENTS.md.",
   "keywords": [
     "relay",

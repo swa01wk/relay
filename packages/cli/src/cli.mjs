@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -10,8 +11,12 @@ const HELP = `relay — Relay command line
 
 Usage
   relay login [--gateway <url>] [--no-browser]   Sign in from the browser and save an account token
-  relay logout                                   Revoke the saved token and forget it
+  relay logout [--all]                           Sign out this device (--all: every device)
   relay whoami                                   Show the signed-in account and its projects
+  relay sessions                                 Devices signed in to your account
+  relay sessions revoke <id>                     Sign a device out (e.g. a lost laptop)
+  relay password                                 Change your password; signs out every other device
+  relay password reset [--gateway <url>]         Forgot it? Opens the page that emails you a reset link
 
   relay projects list
   relay projects create <name>
@@ -48,6 +53,7 @@ const OPTIONS = {
   kind: { type: "string" },
   name: { type: "string" },
   "no-browser": { type: "boolean" },
+  all: { type: "boolean" },
   rotate: { type: "boolean" },
   help: { type: "boolean", short: "h" },
 };
@@ -65,6 +71,24 @@ function openBrowser(url) {
     child.unref();
   } catch {
     // ignore
+  }
+}
+
+/**
+ * A call made as the signed-in account. When the gateway asks for the password again
+ * (changes that could hand the project to someone holding a copy of this token), prompt for it
+ * once, confirm it, and retry.
+ */
+export async function authed(saved, path, options = {}, ask = readSecret) {
+  const call = () => request(saved.gateway, path, { ...options, token: saved.token });
+  try {
+    return await call();
+  } catch (error) {
+    if (!(error instanceof ApiError) || !error.reauth) throw error;
+    const password = await ask("Confirm with your Relay password (input hidden): ");
+    if (!password) throw new Error("no password entered");
+    await request(saved.gateway, "/v1/auth/reauth", { method: "POST", token: saved.token, body: { password } });
+    return call();
   }
 }
 
@@ -88,6 +112,7 @@ async function login(flags, out) {
   const start = await request(gateway, "/v1/auth/device", { method: "POST" });
   out.log(`\nOpen this page to sign in:\n\n  ${start.verification_uri_complete}\n`);
   out.log(`and confirm the code  ${start.user_code}\n`);
+  out.log("New to Relay? Tick “I'm new”; you will confirm your email before this terminal is signed in.\n");
   if (!flags["no-browser"]) openBrowser(start.verification_uri_complete);
   out.log("Waiting for approval…");
 
@@ -96,7 +121,8 @@ async function login(flags, out) {
     await sleep(start.interval * 1000);
     const poll = await request(gateway, "/v1/auth/device/token", {
       method: "POST",
-      body: { device_code: start.device_code },
+      // Names this device in `relay sessions`, so a sign-in you don't recognise stands out.
+      body: { device_code: start.device_code, client_name: `${hostname()} (${process.platform})` },
     });
     if (poll.status !== "approved") continue;
     const path = writeCredentials({ gateway, token: poll.token, email: poll.email, project: poll.project.id });
@@ -110,21 +136,67 @@ async function login(flags, out) {
   return 1;
 }
 
-async function logout(_flags, out) {
+async function logout(flags, out) {
   const saved = readCredentials();
   if (saved) {
     // Revoke server-side too; a stolen copy of the file stops working.
-    await request(saved.gateway, "/v1/auth/logout", { method: "POST", token: saved.token }).catch(() => {});
+    await authed(saved, "/v1/auth/logout", { method: "POST", body: { everywhere: Boolean(flags.all) } }).catch(() => {});
   }
   clearCredentials();
-  out.log("Signed out.");
+  out.log(flags.all ? "Signed out on every device." : "Signed out.");
+  return 0;
+}
+
+async function sessions(action, args, _flags, out) {
+  const saved = signedIn(out);
+  if (!saved) return 1;
+  if (action === "list" || action === undefined) {
+    const { sessions: list } = await authed(saved, "/v1/auth/sessions");
+    for (const device of list) {
+      const used = device.last_used_at ? `last used ${device.last_used_at.slice(0, 16).replace("T", " ")}` : "unused";
+      out.log(`${device.current ? "*" : " "} ${device.id}  ${device.name}  ${used}${device.last_used_ip ? ` from ${device.last_used_ip}` : ""}`);
+    }
+    out.log("\nDon't recognise one? relay sessions revoke <id>, then relay password");
+    return 0;
+  }
+  if (action === "revoke") {
+    const [id] = args;
+    if (!id) throw new Error("usage: relay sessions revoke <id>");
+    await authed(saved, `/v1/auth/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    out.log(`Signed out ${id}`);
+    return 0;
+  }
+  throw new Error(`unknown command: relay sessions ${action}`);
+}
+
+async function password(action, flags, out) {
+  if (action === "reset") {
+    // Works signed out: the reset link goes to the account's email.
+    const url = `${gatewayUrl(flags.gateway)}/v1/auth/forgot-password`;
+    out.log(`Open this page and enter your email; we'll send a reset link:\n\n  ${url}\n`);
+    if (!flags["no-browser"]) openBrowser(url);
+    return 0;
+  }
+  if (action !== undefined) throw new Error(`unknown command: relay password ${action}`);
+  const saved = signedIn(out);
+  if (!saved) return 1;
+  const current = await readSecret("Current password (input hidden): ");
+  const next = await readSecret("New password, 10+ characters (input hidden): ");
+  const again = await readSecret("New password again: ");
+  if (next !== again) throw new Error("the new passwords do not match");
+  const changed = await request(saved.gateway, "/v1/auth/password", {
+    method: "POST",
+    token: saved.token,
+    body: { current_password: current, new_password: next },
+  });
+  out.log(`Password changed. Signed out ${changed.other_devices_signed_out} other device(s).`);
   return 0;
 }
 
 async function whoami(_flags, out) {
   const saved = signedIn(out);
   if (!saved) return 1;
-  const me = await request(saved.gateway, "/v1/me", { token: saved.token });
+  const me = await authed(saved, "/v1/me", {});
   out.log(`${me.email}  (${saved.gateway})`);
   for (const project of me.projects) {
     out.log(`  ${project.id === saved.project ? "*" : " "} ${project.id}  ${project.name}`);
@@ -136,7 +208,7 @@ async function projects(action, args, _flags, out) {
   const saved = signedIn(out);
   if (!saved) return 1;
   if (action === "list" || action === undefined) {
-    const { projects: list } = await request(saved.gateway, "/v1/projects", { token: saved.token });
+    const { projects: list } = await authed(saved, "/v1/projects", {});
     for (const project of list) {
       out.log(`${project.id === saved.project ? "*" : " "} ${project.id}  ${project.name}`);
     }
@@ -145,13 +217,13 @@ async function projects(action, args, _flags, out) {
   if (action === "create") {
     const name = args.join(" ").trim();
     if (!name) throw new Error("usage: relay projects create <name>");
-    const project = await request(saved.gateway, "/v1/projects", { method: "POST", token: saved.token, body: { name } });
+    const project = await authed(saved, "/v1/projects", { method: "POST", body: { name } });
     out.log(`Created ${project.name} (${project.id})`);
     return 0;
   }
   if (action === "use") {
     const [id] = args;
-    const { projects: list } = await request(saved.gateway, "/v1/projects", { token: saved.token });
+    const { projects: list } = await authed(saved, "/v1/projects", {});
     const project = list.find((p) => p.id === id);
     if (!project) throw new Error(`no project ${id ?? ""} in this account`.replace("  ", " "));
     writeCredentials({ ...saved, project: project.id });
@@ -166,19 +238,20 @@ async function keys(action, args, flags, out) {
   if (!saved) return 1;
   const base = `/v1/projects/${encodeURIComponent(projectId(flags, saved))}/keys`;
   if (action === "list" || action === undefined) {
-    const { keys: list } = await request(saved.gateway, base, { token: saved.token });
+    const { keys: list } = await authed(saved, base, {});
     if (!list.length) out.log("No keys yet. Create one: relay keys create --kind publishable");
     for (const key of list) {
-      const state = key.revoked ? "revoked" : key.last_used_at ? `used ${key.last_used_at.slice(0, 10)}` : "unused";
+      const where = key.last_used_ip ? ` from ${key.last_used_ip}` : "";
+      const spread = key.addresses_seen > 1 ? ` (${key.addresses_seen} addresses)` : "";
+      const state = key.revoked ? "revoked" : key.last_used_at ? `used ${key.last_used_at.slice(0, 10)}${where}${spread}` : "unused";
       out.log(`${key.id}  ${key.kind.padEnd(11)}  ${key.prefix}…  ${state}  ${key.name}`);
     }
     return 0;
   }
   if (action === "create") {
     const kind = flags.kind ?? "publishable";
-    const created = await request(saved.gateway, base, {
+    const created = await authed(saved, base, {
       method: "POST",
-      token: saved.token,
       body: { kind, name: flags.name ?? "" },
     });
     out.log(`\n${created.key}\n`);
@@ -193,7 +266,7 @@ async function keys(action, args, flags, out) {
   if (action === "revoke") {
     const [id] = args;
     if (!id) throw new Error("usage: relay keys revoke <key-id>");
-    await request(saved.gateway, `${base}/${encodeURIComponent(id)}`, { method: "DELETE", token: saved.token });
+    await authed(saved, `${base}/${encodeURIComponent(id)}`, { method: "DELETE" });
     out.log(`Revoked ${id}`);
     return 0;
   }
@@ -205,9 +278,8 @@ async function origins(action, args, flags, out) {
   if (!saved) return 1;
   if (action !== "set" && action !== "clear") throw new Error("usage: relay origins set <origin>... | relay origins clear");
   if (action === "set" && !args.length) throw new Error("usage: relay origins set https://app.example.com");
-  const project = await request(saved.gateway, `/v1/projects/${encodeURIComponent(projectId(flags, saved))}/origins`, {
+  const project = await authed(saved, `/v1/projects/${encodeURIComponent(projectId(flags, saved))}/origins`, {
     method: "PUT",
-    token: saved.token,
     body: { allowed_origins: action === "set" ? args : [] },
   });
   out.log(
@@ -270,7 +342,7 @@ async function agents(action, args, flags, out) {
   if (!saved) return 1;
   const base = `/v1/projects/${encodeURIComponent(projectId(flags, saved))}/agents`;
   if (action === "list" || action === undefined) {
-    const { agents: list } = await request(saved.gateway, base, { token: saved.token });
+    const { agents: list } = await authed(saved, base, {});
     if (!list.length) out.log("No agents yet. Add one: relay agents push agent.yaml");
     for (const agent of list) out.log(`${agent.agent_id}  ${agent.tools_url}  updated ${agent.updated_at.slice(0, 10)}`);
     return 0;
@@ -278,7 +350,7 @@ async function agents(action, args, flags, out) {
   if (action === "push") {
     const [file] = args;
     if (!file) throw new Error("usage: relay agents push <agent.yaml>");
-    const pushed = await request(saved.gateway, base, { method: "POST", token: saved.token, body: readManifest(file) });
+    const pushed = await authed(saved, base, { method: "POST", body: readManifest(file) });
     out.log(`Agent ${pushed.agent_id} is live (${pushed.tools.length} tools from ${pushed.tools_url}).`);
     if (pushed.tools.length) out.log(`Tools: ${pushed.tools.join(", ")}`);
     out.log(`Use it: createRelaySession({ apiKey, agentId: "${pushed.agent_id}", gatewayUrl })`);
@@ -287,7 +359,7 @@ async function agents(action, args, flags, out) {
   if (action === "delete") {
     const [id] = args;
     if (!id) throw new Error("usage: relay agents delete <agent-id>");
-    await request(saved.gateway, `${base}/${encodeURIComponent(id)}`, { method: "DELETE", token: saved.token });
+    await authed(saved, `${base}/${encodeURIComponent(id)}`, { method: "DELETE" });
     out.log(`Deleted ${id}`);
     return 0;
   }
@@ -299,7 +371,7 @@ async function secrets(action, args, flags, out) {
   if (!saved) return 1;
   const base = `/v1/projects/${encodeURIComponent(projectId(flags, saved))}/secrets`;
   if (action === "list" || action === undefined) {
-    const { secrets: list } = await request(saved.gateway, base, { token: saved.token });
+    const { secrets: list } = await authed(saved, base, {});
     for (const secret of list) {
       out.log(`${secret.name.padEnd(8)} ${secret.set ? `set (${secret.hint}, ${secret.updated_at.slice(0, 10)})` : "not set"}`);
     }
@@ -313,13 +385,13 @@ async function secrets(action, args, flags, out) {
   }
   const path = `${base}/${encodeURIComponent(name)}`;
   if (action === "unset") {
-    await request(saved.gateway, path, { method: "DELETE", token: saved.token });
+    await authed(saved, path, { method: "DELETE" });
     out.log(`Removed ${name}.`);
     return 0;
   }
   const value = await readSecret(`Paste your ${name} API key (input hidden): `);
   if (!value) throw new Error("no key entered");
-  const stored = await request(saved.gateway, path, { method: "PUT", token: saved.token, body: { value } });
+  const stored = await authed(saved, path, { method: "PUT", body: { value } });
   out.log(`Saved ${stored.name} key ${stored.hint}. It is stored encrypted and is never shown again.`);
   return 0;
 }
@@ -329,7 +401,7 @@ async function tools(action, _args, flags, out) {
   if (!saved) return 1;
   if (action !== "secret") throw new Error("usage: relay tools secret [--rotate]");
   const path = `/v1/projects/${encodeURIComponent(projectId(flags, saved))}/tools-signing-secret${flags.rotate ? "?rotate=true" : ""}`;
-  const { signing_secret: secret } = await request(saved.gateway, path, { method: "POST", token: saved.token });
+  const { signing_secret: secret } = await authed(saved, path, { method: "POST" });
   out.log(`\n${secret}\n`);
   out.log("Set this in your tools service and verify X-Relay-Signature on every request.");
   if (flags.rotate) out.log("The previous secret no longer works; update your tools service now.");
@@ -358,6 +430,10 @@ export async function main(argv, out = console) {
         return await logout(flags, out);
       case "whoami":
         return await whoami(flags, out);
+      case "sessions":
+        return await sessions(action, rest, flags, out);
+      case "password":
+        return await password(action, flags, out);
       case "projects":
         return await projects(action, rest, flags, out);
       case "keys":
@@ -377,6 +453,10 @@ export async function main(argv, out = console) {
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
       out.error(`relay: ${error.message}. Run \`relay login\` again.`);
+      return 1;
+    }
+    if (error instanceof ApiError && error.status === 429) {
+      out.error(`relay: ${error.message}`);
       return 1;
     }
     out.error(`relay: ${error.message}`);

@@ -8,11 +8,13 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from relay_gateway.core.errors import BadRequest, NotFound
+from relay_gateway.core.errors import BadRequest, EmailNotVerified, NotFound
 from relay_gateway.repositories.device_login_repository import DeviceLoginRepository
 from relay_gateway.models import ACCOUNT_TOKEN
-from relay_gateway.services.auth_service import AuthService, hash_key
+from relay_gateway.services.account_email_service import AccountEmailService
+from relay_gateway.services.auth_service import AuthService, email_verification_required, hash_key
 from relay_gateway.services.project_service import ProjectService, project_view
+from relay_gateway.services.rate_limit_service import DEVICE_POLLS, DEVICE_STARTS_PER_IP, RateLimitService
 
 _CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ23456789"  # no vowels or look-alikes
 EXPIRES_IN_SECONDS = 600
@@ -24,12 +26,22 @@ def normalize_user_code(code: str) -> str:
 
 
 class DeviceLoginService:
-    def __init__(self, logins: DeviceLoginRepository, auth: AuthService, projects: ProjectService) -> None:
+    def __init__(
+        self,
+        logins: DeviceLoginRepository,
+        auth: AuthService,
+        projects: ProjectService,
+        limits: RateLimitService,
+        emails: AccountEmailService,
+    ) -> None:
+        self._emails = emails
         self._logins = logins
         self._auth = auth
         self._projects = projects
+        self._limits = limits
 
-    async def start(self, *, base_url: str) -> dict[str, Any]:
+    async def start(self, *, base_url: str, ip: str | None = None) -> dict[str, Any]:
+        await self._limits.take(DEVICE_STARTS_PER_IP, ip)
         device_code = secrets.token_urlsafe(32)
         user_code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(8))
         await self._logins.create(
@@ -48,19 +60,44 @@ class DeviceLoginService:
             "interval": POLL_INTERVAL_SECONDS,
         }
 
-    async def approve(self, *, user_code: str, email: str, password: str, create_account: bool) -> str:
-        """Sign in (or sign up) and approve the CLI's request. Returns the account's email."""
+    async def approve(
+        self,
+        *,
+        user_code: str,
+        email: str,
+        password: str,
+        create_account: bool,
+        ip: str | None = None,
+        base_url: str = "",
+    ) -> tuple[str, str]:
+        """Sign in (or sign up) and approve the CLI's request.
+
+        Returns ``("approved", email)``, or ``("verify", email)`` after a sign-up that must first
+        be confirmed from the inbox — the terminal stays pending until the person signs in again.
+        """
         code = normalize_user_code(user_code)
         if len(code) != 8:
             raise BadRequest("enter the 8-character code shown in your terminal")
-        account = await (self._auth.register(email, password) if create_account else self._auth.sign_in(email, password))
+        if create_account:
+            account = await self._auth.register(email, password, ip=ip)
+            if email_verification_required():
+                await self._emails.send_verification(account, base_url=base_url)
+                return "verify", account.email
+        else:
+            try:
+                account = await self._auth.sign_in(email, password, ip=ip)
+            except EmailNotVerified as unverified:
+                await self._emails.send_verification(unverified.account, base_url=base_url)  # type: ignore[arg-type]
+                raise
         if not await self._logins.approve(code, account.id):
             raise NotFound("that code is not valid or has expired — run `relay login` again")
-        return account.email
+        return "approved", account.email
 
-    async def poll(self, device_code: str) -> dict[str, Any]:
-        """``{"status": "pending"}`` until approved, then the account token — exactly once."""
+    async def poll(self, device_code: str, *, client_name: str = "") -> dict[str, Any]:
+        """``{"status": "pending"}`` until approved, then the account token — exactly once.
+        ``client_name`` (e.g. the machine's hostname) labels the device in `relay sessions`."""
         device_hash = hash_key(device_code)
+        await self._limits.take(DEVICE_POLLS, device_hash)
         login = await self._logins.by_device_hash(device_hash)
         if login is None or login.expires_at <= datetime.now(timezone.utc):
             raise NotFound("login request expired — run `relay login` again")
@@ -71,7 +108,10 @@ class DeviceLoginService:
             return {"status": "pending"}
         account = await self._auth.account(login.account_id)
         project = await self._projects.default_for(login.account_id)
-        _key, token = await self._auth.issue_key(account_id=login.account_id, kind=ACCOUNT_TOKEN, name="relay CLI")
+        label = "".join(ch for ch in client_name if ch.isprintable())[:60].strip()
+        _key, token = await self._auth.issue_key(
+            account_id=login.account_id, kind=ACCOUNT_TOKEN, name=f"relay CLI on {label}" if label else "relay CLI"
+        )
         return {
             "status": "approved",
             "token": token,

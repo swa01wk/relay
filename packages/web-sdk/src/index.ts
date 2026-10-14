@@ -164,15 +164,29 @@ export async function createDevSession(
   };
 }
 
-/** Start a session in the project the API key belongs to (`POST /v1/sessions`). */
+/** Which of your app's users a session is for. Sent to your tools service on every call. */
+export type RelayEndUser = {
+  /** Your own id for the signed-in user. */
+  id: string;
+  /** Optional facts your tools need (role, organisation, …): strings, numbers or booleans. */
+  attributes?: Record<string, string | number | boolean>;
+};
+
+/**
+ * Start a session in the project the API key belongs to (`POST /v1/sessions`).
+ *
+ * `user` may only be set with a **secret** key, i.e. from your server after it has checked who
+ * is signed in; hand the returned `sessionId` and `devToken` to the browser
+ * (`createRelaySession({ sessionId, devToken, … })`).
+ */
 export async function createSession(
   gatewayUrl: string,
-  params: { apiKey: string; agentId: string },
+  params: { apiKey: string; agentId: string; user?: RelayEndUser },
 ): Promise<DevSessionResult> {
   const res = await fetch(`${gatewayUrl.replace(/\/$/, "")}/v1/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${params.apiKey}` },
-    body: JSON.stringify({ agent_id: params.agentId }),
+    body: JSON.stringify({ agent_id: params.agentId, ...(params.user ? { user: params.user } : {}) }),
   });
   if (!res.ok) {
     const detail = await res
@@ -419,9 +433,8 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
         for (const event of created.events) emit(event);
       }
       const wsUrl = baseUrl.replace(/^http/, "ws");
-      socket = new WebSocket(
-        `${wsUrl}/ws/sessions/${sessionId}?token=${encodeURIComponent(devToken!)}`,
-      );
+      // Browsers cannot set WebSocket headers, so the token travels as a subprotocol — not in the URL.
+      socket = new WebSocket(`${wsUrl}/ws/sessions/${sessionId}`, ["relay.v1", `relay.token.${devToken!}`]);
       await new Promise<void>((resolve, reject) => {
         if (!socket) return reject(new Error("socket missing"));
         socket.onopen = () => resolve();

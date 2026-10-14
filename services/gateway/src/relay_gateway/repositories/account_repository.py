@@ -22,6 +22,17 @@ class AccountRepository(ABC):
     async def account(self, account_id: str) -> Account | None: ...
 
     @abstractmethod
+    async def set_password_hash(self, account_id: str, password_hash: str) -> None: ...
+
+    @abstractmethod
+    async def mark_email_verified(self, account_id: str) -> None: ...
+
+    @abstractmethod
+    async def replace_unverified(self, email: str, password_hash: str) -> Account | None:
+        """Give a never-verified account a new password (sign-up again); ``None`` when the
+        account does not exist or is already verified."""
+
+    @abstractmethod
     async def create_project(self, project_id: str, account_id: str, name: str) -> Project: ...
 
     @abstractmethod
@@ -52,6 +63,20 @@ class MemoryAccountRepository(AccountRepository):
     async def account(self, account_id: str) -> Account | None:
         return self._accounts.get(account_id)
 
+    async def set_password_hash(self, account_id: str, password_hash: str) -> None:
+        self._accounts[account_id].password_hash = password_hash
+
+    async def mark_email_verified(self, account_id: str) -> None:
+        account = self._accounts[account_id]
+        account.email_verified_at = account.email_verified_at or datetime.now(timezone.utc)
+
+    async def replace_unverified(self, email: str, password_hash: str) -> Account | None:
+        account = await self.account_by_email(email)
+        if account is None or account.email_verified_at is not None:
+            return None
+        account.password_hash = password_hash
+        return account
+
     async def create_project(self, project_id: str, account_id: str, name: str) -> Project:
         project = Project(project_id, account_id, name, datetime.now(timezone.utc))
         self._projects[project.id] = project
@@ -68,7 +93,7 @@ class MemoryAccountRepository(AccountRepository):
 
 
 def _account(row) -> Account:
-    return Account(str(row["id"]), row["email"], row["password_hash"], row["created_at"])
+    return Account(str(row["id"]), row["email"], row["password_hash"], row["created_at"], row["email_verified_at"])
 
 
 def _project(row) -> Project:
@@ -94,6 +119,24 @@ class PostgresAccountRepository(AccountRepository):
 
     async def account(self, account_id: str) -> Account | None:
         row = await (await self._db.pool()).fetchrow("SELECT * FROM relay_accounts WHERE id = $1::uuid", account_id)
+        return _account(row) if row else None
+
+    async def set_password_hash(self, account_id: str, password_hash: str) -> None:
+        await (await self._db.pool()).execute(
+            "UPDATE relay_accounts SET password_hash = $2 WHERE id = $1::uuid", account_id, password_hash
+        )
+
+    async def mark_email_verified(self, account_id: str) -> None:
+        await (await self._db.pool()).execute(
+            "UPDATE relay_accounts SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = $1::uuid",
+            account_id,
+        )
+
+    async def replace_unverified(self, email: str, password_hash: str) -> Account | None:
+        row = await (await self._db.pool()).fetchrow(
+            "UPDATE relay_accounts SET password_hash = $2 WHERE email = $1 AND email_verified_at IS NULL RETURNING *",
+            email, password_hash,
+        )  # fmt: skip
         return _account(row) if row else None
 
     async def create_project(self, project_id: str, account_id: str, name: str) -> Project:

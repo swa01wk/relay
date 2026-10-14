@@ -26,7 +26,7 @@ from typing import Any
 import httpx
 import yaml
 
-from relay_adapter_tools_http import HttpToolExecutor, signature_headers
+from relay_adapter_tools_http import AddressGuard, HttpToolExecutor, pinned_target, signed_headers
 from relay_runtime import (
     AgentRuntime,
     ModelRouter,
@@ -185,14 +185,19 @@ async def discover_tools(
     delay_seconds: float = 2.0,
     transport: httpx.AsyncBaseTransport | None = None,
     signing_secret: str | None = None,
+    address_guard: AddressGuard | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch ``GET {tools_url}/tools``, retrying while the tools service starts."""
     last_error: Exception | None = None
     async with httpx.AsyncClient(timeout=10.0, transport=transport) as client:
         for attempt in range(1, attempts + 1):
             try:
-                headers = signature_headers(signing_secret, b"") if signing_secret else {}
-                response = await client.get(f"{tools_url}/tools", headers=headers)
+                headers = signed_headers(signing_secret, b"", operation="tools.list") if signing_secret else {}
+                url, extensions = f"{tools_url}/tools", {}
+                if address_guard is not None:
+                    url, host_header, extensions = await pinned_target(url, address_guard)
+                    headers.update(host_header)
+                response = await client.get(url, headers=headers, extensions=extensions)
                 response.raise_for_status()
                 tools = response.json().get("tools")
                 if not isinstance(tools, list):

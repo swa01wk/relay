@@ -30,7 +30,7 @@ test("built entry loads without a bundler and exposes the public API", async () 
 test("shipped docs are customer-facing: no repo paths, operator settings or example domains", async () => {
   const { readdirSync } = await import("node:fs");
   const files = ["README.md", "AGENTS.md", ...readdirSync(join(root, "docs")).map((f) => join("docs", f))];
-  const forbidden = /examples\/|sales-crm|mortgage|\bCRM\b|infra\/|services\/gateway|relay_gateway|docker compose|(?<![A-Z_])RELAY_[A-Z_]{3,}/;
+  const forbidden = /examples\/|sales-crm|mortgage|\bCRM\b|infra\/|services\/gateway|relay_gateway|docker compose|(?<![A-Z_.])RELAY_[A-Z_]{3,}/;  // process.env.RELAY_* in app samples is the app's own config
   for (const file of files) {
     readFileSync(join(root, file), "utf8").split("\n").forEach((line, index) => {
       assert.doesNotMatch(line, forbidden, `${file}:${index + 1}`);

@@ -8,7 +8,7 @@ from starlette.testclient import TestClient
 from relay_gateway.app import create_app
 from relay_gateway.core import container
 
-from conftest import run_turn
+from gateway_test_support import run_turn
 
 PASSWORD = "correct horse battery"
 

@@ -1,8 +1,11 @@
 // Calls to the Relay gateway. Errors carry the gateway's own message.
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, { reauth = false, retryAfter = null } = {}) {
     super(message);
     this.status = status;
+    // The gateway wants the password again before this change (X-Relay-Reauth: required).
+    this.reauth = reauth;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -29,7 +32,10 @@ export async function request(gateway, path, { method = "GET", token, body } = {
   }
   if (!response.ok) {
     const detail = typeof data?.detail === "string" ? data.detail : `request failed (${response.status})`;
-    throw new ApiError(response.status, detail);
+    throw new ApiError(response.status, detail, {
+      reauth: response.headers.get("x-relay-reauth") === "required",
+      retryAfter: response.headers.get("retry-after"),
+    });
   }
   return data;
 }

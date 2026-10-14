@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from relay_gateway.core.container import realtime_service, session_service
+from relay_gateway.core.http import session_token
 
 router = APIRouter(tags=["webrtc"])
 
@@ -36,9 +37,10 @@ class WebRtcPatchBody(BaseModel):
 async def webrtc_offer(
     session_id: str,
     body: WebRtcOfferBody,
-    token: str = Query(..., description="Dev session token"),
+    request: Request,
+    token: str | None = Query(default=None, description="Deprecated: send Authorization: Bearer <token>"),
 ) -> dict[str, Any]:
-    session_service.require_token(session_id, token, detail=_TOKEN_ERROR)
+    session_service.require_token(session_id, session_token(request, token), detail=_TOKEN_ERROR)
     return await realtime_service.offer(session_id, body.model_dump(exclude_none=True))
 
 
@@ -46,9 +48,10 @@ async def webrtc_offer(
 async def webrtc_ice_patch(
     session_id: str,
     body: WebRtcPatchBody,
-    token: str = Query(..., description="Dev session token"),
+    request: Request,
+    token: str | None = Query(default=None, description="Deprecated: send Authorization: Bearer <token>"),
 ) -> dict[str, str]:
-    session_service.require_token(session_id, token, detail=_TOKEN_ERROR)
+    session_service.require_token(session_id, session_token(request, token), detail=_TOKEN_ERROR)
     await realtime_service.add_ice_candidates(
         session_id, pc_id=body.pc_id, candidates=[c.model_dump() for c in body.candidates]
     )

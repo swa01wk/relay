@@ -81,6 +81,11 @@ services:
       RELAY_SECRETS_KEY: ${RELAY_SECRETS_KEY:-relay-dev-only-secrets-key-not-for-production}
       # Local dev: customers' tools URLs may point at localhost / compose services.
       RELAY_ALLOW_PRIVATE_TOOLS_URLS: "1"
+      # New accounts confirm their email. Without RELAY_SMTP_HOST the emails (with their links) are
+      # printed to this container's log: `docker compose ... logs gateway`.
+      RELAY_EMAIL_VERIFICATION: required
+      # Local dev: anyone may sign up. On a public gateway use allowlist (see RELAY_SIGNUP_ALLOWLIST) or closed.
+      RELAY_SIGNUP: open
       # Local dev: sessions without an API key (POST /dev/sessions). Never set this in production.
       RELAY_DEV_SESSIONS: "1"
       # Local dev: open /metrics. In production set RELAY_METRICS_TOKEN instead (see reference).

@@ -75,6 +75,32 @@ Notes:
 - `session.on("agent_activity", e => e.payload.speaking)` tells you when the agent is speaking.
 - In React, create the session inside `useEffect` and disconnect in its cleanup. Strict Mode mounts twice; that is fine (the server ends the abandoned session automatically).
 
+### Apps where users sign in: start the session on your server
+
+If the assistant reads or changes **per-user data** (my meetings, my orders), start the session from your backend, after your own login check, and say who it is for. Your tools service then receives that user on every call (backend guide §3). Never let the browser say who the user is.
+
+```ts
+// Your backend (route handler / API route). The secret key (rsk_…) comes from `relay keys create --kind secret`.
+import { createSession } from "@sumukhj1219-wkt-org/relay-web-sdk"
+
+export async function startAssistant(currentUser: { id: string; role: string }) {
+  const s = await createSession(process.env.RELAY_GATEWAY_URL!, {
+    apiKey: process.env.RELAY_SECRET_KEY!,
+    agentId: "orders",
+    user: { id: currentUser.id, attributes: { role: currentUser.role } },
+  })
+  return { sessionId: s.sessionId, token: s.devToken }   // send only these to the browser
+}
+```
+
+```ts
+// Browser: connect to the session your server created (no key in the browser at all).
+const { sessionId, token } = await fetch("/api/assistant/session", { method: "POST" }).then((r) => r.json())
+const session = createRelaySession({ gatewayUrl, agentId: "orders", sessionId, devToken: token })
+```
+
+A publishable key cannot set `user` (`403`): use it only when the assistant needs no per-user data. The session token is sent in a header and the WebSocket protocol list, never in a URL.
+
 In React, put all of this in one provider component (`RelayProvider`) with a `useRelay()` hook exposing messages, surfaces, busy, voice state, errors and `submitForm`, so the rest of the app never touches the session directly.
 
 ## 3. Render surfaces

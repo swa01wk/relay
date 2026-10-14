@@ -129,6 +129,8 @@ class SessionRecord:
     token_expires_at: datetime
     sequence: int = 0
     ended: bool = False
+    # Who the app says this session is for ({"id", "attributes"?}); None when not given.
+    end_user: dict[str, Any] | None = None
     turn_manager: TurnManager = field(default_factory=TurnManager)
     playback_tracker: PlaybackTracker | None = None
     interruption_manager: InterruptionManager = field(default_factory=InterruptionManager)
@@ -285,6 +287,7 @@ class SessionManager:
                 payload={
                     "approval_id": record.approval_id,
                     "tool_name": record.tool_name,
+                    "end_user_id": (session.end_user or {}).get("id"),
                     "form_id": form_id,
                     "via": "form_submit",
                     "lifecycle_stage": record.lifecycle_stage.value,
@@ -769,6 +772,7 @@ class SessionManager:
                 payload={
                     "approval_id": approval_id,
                     "tool_name": record.tool_name,
+                    "end_user_id": (session.end_user or {}).get("id"),
                     "lifecycle_stage": record.lifecycle_stage.value,
                 },
             ),
@@ -807,6 +811,7 @@ class SessionManager:
                 payload={
                     "approval_id": approval_id,
                     "tool_name": record.tool_name,
+                    "end_user_id": (session.end_user or {}).get("id"),
                     "lifecycle_stage": record.lifecycle_stage.value,
                 },
             ),
@@ -1697,6 +1702,7 @@ class SessionManager:
         *,
         project_id: str,
         agent_id: str,
+        end_user: dict[str, Any] | None = None,
     ) -> tuple[SessionRecord, list[RelayEvent]]:
         session_id = str(uuid4())
         trace_id = self.trace_manager.new_trace_id()
@@ -1710,6 +1716,7 @@ class SessionManager:
             dev_token=dev_token,
             token_expires_at=expires,
             playback_tracker=PlaybackTracker(session_id=session_id),
+            end_user=dict(end_user) if end_user else None,
         )
         self._attach_playback_handlers(session)
         if self.session_lock is not None:

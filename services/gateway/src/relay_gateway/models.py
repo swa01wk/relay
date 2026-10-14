@@ -18,6 +18,7 @@ class Account:
     email: str
     password_hash: str
     created_at: datetime
+    email_verified_at: datetime | None = None
 
 
 @dataclass
@@ -40,6 +41,12 @@ class ApiKey:
     created_at: datetime
     last_used_at: datetime | None = None
     revoked_at: datetime | None = None
+    expires_at: datetime | None = None
+    last_used_ip: str | None = None
+    # Account tokens only: when the person last proved they know the password.
+    reauthenticated_at: datetime | None = None
+    # Secret keys: client addresses the key has been used from (most recent last, capped).
+    seen_ips: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -77,3 +84,19 @@ class ProjectSecret:
 # Secret names
 OPENAI_API_KEY = "openai_api_key"
 TOOLS_SIGNING_SECRET = "tools_signing_secret"
+
+
+# Purposes of one-time email links
+VERIFY_EMAIL = "verify_email"
+RESET_PASSWORD = "reset_password"
+
+
+@dataclass
+class EmailToken:
+    """A one-time link sent by email. Only its hash is stored."""
+
+    token_hash: str
+    account_id: str
+    purpose: str
+    expires_at: datetime
+    used_at: datetime | None = None

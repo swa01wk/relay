@@ -66,8 +66,16 @@ Set in `infra/docker/.env` (or the gateway container's environment). The gateway
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Enables OpenTelemetry traces over OTLP/HTTP (e.g. `http://otel-collector:4318`); other standard `OTEL_*` variables apply. `OTEL_SERVICE_NAME` defaults to `relay-gateway` |
 | `RELAY_SECRETS_KEY` | — | Long random string (24+ characters) that encrypts customers' model keys and signing secrets at rest. Without it secrets cannot be stored. Changing or losing it makes stored secrets unreadable |
 | `RELAY_ALLOW_PRIVATE_TOOLS_URLS` | — (off) | `1` lets projects use `http://` and private/loopback tools URLs. Local development only: with it on, a customer can make the gateway call hosts inside your network |
+| `RELAY_SIGNUP` | `open` | Who may create an account: `open`, `allowlist` (only `RELAY_SIGNUP_ALLOWLIST`) or `closed`. An unrecognised value means `closed`. Use `allowlist` or `closed` on a public gateway; existing accounts can always sign in |
+| `RELAY_EMAIL_VERIFICATION` | `required` | New accounts must confirm their email before their first sign-in. `off` skips it (accounts count as confirmed at sign-up) |
+| `RELAY_SMTP_HOST` | — | SMTP server for confirmation and password-reset emails. **Without it, emails are printed to the gateway log** (development only: anyone who can read the log could take over accounts) |
+| `RELAY_SMTP_PORT` · `RELAY_SMTP_USERNAME` · `RELAY_SMTP_PASSWORD` · `RELAY_SMTP_STARTTLS` | `587` · — · — · `1` | SMTP connection; STARTTLS on by default |
+| `RELAY_EMAIL_FROM` | `Relay <no-reply@localhost>` | Sender of those emails |
+| `RELAY_SIGNUP_ALLOWLIST` | — | Comma-separated emails and/or `@domain` entries, e.g. `ana@acme.com,@acme.com` (exact domain only, not subdomains) |
+| `RELAY_RATE_LIMITS` | `on` | `off` disables every rate limit and the login lockout (load tests only) |
+| `RELAY_TRUST_PROXY_HEADERS` | — (off) | `1` behind a proxy you run (Caddy, nginx, ngrok): client addresses are read from `X-Forwarded-For` (last entry). Leave off when clients reach the gateway directly, or anyone could fake their address and escape per-address limits |
 | `RELAY_DEV_SESSIONS` | — (off) | `1` enables `POST /dev/sessions` (no key; the caller names the project). Local development and tests only — the compose stack sets it |
-| `RELAY_PUBLIC_URL` | request host | Public address of the gateway, used in the `relay login` link (set it behind a proxy) |
+| `RELAY_PUBLIC_URL` | request host | Public address of the gateway, used in the `relay login` link and in emailed links. **Required for emails on a public gateway**: without it, links are only built for `localhost` (or with `RELAY_DEV_SESSIONS`), so a forged `Host` header cannot make the gateway email someone a link to another site |
 | `RELAY_ADMIN_TOKEN` | — | Enables the session inspector and audit API under `/admin` and is the bearer token they require |
 | `RELAY_EVENT_RETENTION_DAYS` | — (keep forever) | Delete stored events older than this many days (checked at startup, then hourly). Removes those sessions from the timeline, inspector and audit trail |
 | `RELAY_EVENT_STORE_REDACT` | — (store everything) | Comma-separated: `text` (transcripts and assistant replies), `data` (tool arguments/results, UI payloads, app state, approval details). Applies to the stored copy only; the live stream to the app is unchanged |
@@ -125,3 +133,30 @@ docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose
 ```
 
 **Per-session view (dev)**: `GET /dev/sessions/{id}/timeline?token=` (ordered events, metrics, spans, `usage` totals) with the session's own token. `SESSION_STARTED` carries the session's `agent_id`.
+
+## Sign-in protection
+
+| Protection | Rule |
+|---|---|
+| Login lockout | 5 wrong passwords for one email → that email is refused for 15 minutes, even with the right password. Unknown emails behave identically, so the response never reveals whether an account exists |
+| Login attempts per address | 30 per 15 minutes |
+| Sign-ups per address | 5 per hour (plus `RELAY_SIGNUP`) |
+| `relay login` starts per address | 10 per 10 minutes; polling 60 per minute per login |
+| Sessions | 120 per minute per key; publishable keys also 30 per minute per visitor address |
+| Account API | 300 requests per minute per CLI token |
+| Wrong passwords when confirming a change | 5 per 15 minutes per account |
+
+Over a limit the gateway answers `429` with `Retry-After`. Counters live in Redis when `RELAY_REDIS_URL` is set (shared by every gateway process), otherwise in memory (per process, reset on restart).
+
+**CLI tokens.** Each `relay login` creates a token for that device only, named after the machine. It expires after 30 days, or after 14 days unused. A copied token can read and can sign devices out or revoke keys, but changes that could hand a project to its holder — creating keys, setting or removing the model key, pushing or deleting agents, changing allowed origins, revealing the tools signing secret, changing the password — need the account password within the last 15 minutes (`403` with `X-Relay-Reauth: required`; the CLI asks for it and retries). Changing the password signs out every other device. Users see their devices with `relay sessions` and can revoke one or all.
+
+**Email confirmation and password reset.** A new account gets a confirmation link (valid 24 hours) and cannot sign in until it is opened; signing in before that resends it. An unconfirmed address can be signed up again by someone else, and whoever confirms it keeps it, so registering another person's email first does not lock them out. *Forgot your password?* on the sign-in page (or `relay password reset`) emails a reset link (valid 1 hour, single use); the answer is the same whether or not the account exists. A reset signs out every device, confirms the email and lifts a login lockout. Links are stored as hashes; requesting a new one cancels the previous one. At most 5 emails per address per hour and 10 reset requests per client address per hour. In development (no SMTP), read the links with `docker compose -f infra/docker/docker-compose.yml logs gateway`. Accounts that existed before confirmation was added count as confirmed.
+
+## Calls to customers' tools services
+
+- **Who is asking.** A business's server may start a session for one of its users (`POST /v1/sessions` with a secret key and `user`). The user is stored on the session, sent as `X-Relay-User` on every tool call, recorded on approval decisions (`end_user_id` in the audit trail) and limited to 30 sessions per minute per user.
+- **Signatures.** Every call carries `X-Relay-Signature-V2`, covering timestamp, operation (`tools.list` / `tools.call:<name>`), session, user and body, plus the older body-only `X-Relay-Signature` for existing integrations.
+- **Address pinning.** Outside `RELAY_ALLOW_PRIVATE_TOOLS_URLS`, every call (and discovery) resolves the tools host first, refuses it if any address is not public, and connects to exactly the checked address with TLS verified against the real host name — a domain re-pointed at an internal address later (DNS rebinding) is refused on the next call. Each agent has its own HTTP client, so connections are never shared between hosts.
+- **Session tokens** are accepted as `Authorization: Bearer`, as the `relay.token.<token>` WebSocket subprotocol, and (for SDK 0.1.x) as `?token=`, which the log handler redacts.
+- **Leaked secret keys.** Each secret key remembers the last 20 addresses it was used from; a new address after the first emails the account owner (at most 3 alerts per key per hour). Needs `RELAY_TRUST_PROXY_HEADERS=1` behind a proxy, or every request looks like it comes from the proxy.
+

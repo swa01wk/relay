@@ -22,7 +22,7 @@ relay keys create --kind publishable  # rpk_… → the app's NEXT_PUBLIC_RELAY_
 relay origins set https://<app-domain>   # limit where that key works
 ```
 
-Ask the developer to run `relay login` and `relay secrets set openai` themselves: both need their browser or their secret. Never write an API key, a secret key (`rsk_…`) or the tools signing secret into frontend code, a committed file or a command line.
+Ask the developer to run `relay login`, `relay secrets set openai`, `relay agents push` and `relay keys create` themselves: login needs their browser, and changes ask for their password. If a command answers with a `429`, wait for the time it gives. Never write an API key, a secret key (`rsk_…`) or the tools signing secret into frontend code, a committed file or a command line.
 
 ## The model in one picture
 
@@ -50,7 +50,8 @@ Who defines what:
 7. Forms: a form with `submitTool` is bound to a backend write tool — submitting **saves** through that tool (the submit is the user's approval); show Saving → Saved/failed from `COMMIT_VERIFIED` / `ERROR` (`commit_failed`) events carrying `payload.form_id`, allow retry on failure, and refresh your data after `COMMIT_VERIFIED`. A form **without** `submitTool` only sends its values to the assistant — never show "saved" for those.
 8. Tools that change data (refunds, updates) must be published with `"classification": "side_effecting"` in `GET /tools`; the model can only *propose* them, and they run only after a human approves (`onApprovalRequested` → `grantApproval`; the assistant then confirms in a follow-up message). Never mark them `read_only`.
 9. The browser holds only the project's **publishable** key (`rpk_…`) and the short-lived session token the gateway issues. Secret keys (`rsk_…`), the model API key and the tools signing secret never go into browser code.
-10. The tools service must verify `X-Relay-Signature` on every request (backend guide §3) — it is reachable from the internet.
+10. The tools service must verify `X-Relay-Signature-V2` on every request (backend guide §3) — it is reachable from the internet.
+11. If the app has signed-in users and the assistant touches per-user data, start sessions **on the server** with the secret key and `user` (frontend guide, "Apps where users sign in"), and filter every tool by the `X-Relay-User` id. The app's login cookie never reaches the tools service.
 
 ## Reference implementation
 

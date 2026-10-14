@@ -267,3 +267,25 @@ def test_runtime_and_published_packages_contain_no_example_domain():
     offenders = [f"{p.relative_to(repo)}:{n}" for p in sources if ".test." not in p.name
                  for n, line in enumerate(p.read_text().splitlines(), 1) if domain.search(line)]
     assert offenders == []
+
+
+@pytest.mark.asyncio
+async def test_approvals_record_which_end_user_decided():
+    from relay_runtime.session_audit import AUDIT_EVENT_TYPES, build_audit_trail
+
+    manager, events, _store, _model = _setup({"deal_id": "DEAL-2042", "stage": "Negotiation", "summary": "Move it"})
+    session, _ = await manager.create_dev_session(project_id="p", agent_id="a", end_user={"id": "u_alice"})
+    try:
+        await manager.submit_user_text(session.session_id, "Move DEAL-2042 to Negotiation")
+        approval_id = _of(events, EventType.APPROVAL_REQUESTED)[0].payload["approval_id"]
+        await manager.submit_client_app_event(
+            session.session_id,
+            name="approval.grant",
+            payload={"approval_id": approval_id, "auth_proof": "dev-approver"},
+        )
+        await _settle(manager, session.session_id)
+        assert _of(events, EventType.APPROVAL_GRANTED)[0].payload["end_user_id"] == "u_alice"
+        (entry,) = build_audit_trail([e for e in events.all_events() if e.type in AUDIT_EVENT_TYPES])
+        assert entry["end_user_id"] == "u_alice" and entry["outcome"] == "saved"
+    finally:
+        await manager.end_session(session.session_id)

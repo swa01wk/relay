@@ -24,6 +24,7 @@ _PAGE = """<!doctype html>
   .check {{ display:flex; gap:8px; align-items:center; margin:14px 0; font-size:13px; }}
   button {{ width:100%; font:inherit; font-weight:600; color:#fff; background:var(--accent); border:0; border-radius:6px; padding:10px; cursor:pointer; }}
   .bad {{ color:var(--bad); }} .ok {{ color:var(--ok); }}
+  a {{ color:var(--accent); }}
 </style>
 </head>
 <body>
@@ -46,14 +47,17 @@ _FORM = """<h1>Connect your terminal</h1>
   <input id="password" name="password" type="password" autocomplete="current-password" minlength="10" required>
   <div class="check"><input id="create" name="create" type="checkbox" value="1"{checked}><label for="create" style="margin:0">I'm new — create my account</label></div>
   <button type="submit">Approve this terminal</button>
-</form>"""
+</form>
+<p style="margin:16px 0 0;font-size:13px"><a href="/v1/auth/forgot-password">Forgot your password?</a></p>"""
 
 _DONE = """<h1 class="ok">Terminal connected</h1>
 <p>Signed in as {email}. You can close this tab and return to your terminal.</p>"""
 
 
-def login_form(*, code: str = "", email: str = "", create: bool = False, error: str = "") -> str:
+def login_form(*, code: str = "", email: str = "", create: bool = False, error: str = "", info: str = "") -> str:
     message = f'<p class="bad" role="alert">{escape(error)}</p>' if error else ""
+    if info:
+        message += f'<p class="ok" role="status">{escape(info)}</p>'
     form = _FORM.format(
         message=message, code=escape(code, quote=True), email=escape(email, quote=True),
         checked=" checked" if create else "",
@@ -63,3 +67,9 @@ def login_form(*, code: str = "", email: str = "", create: bool = False, error: 
 
 def login_done(email: str) -> str:
     return _PAGE.format(body=_DONE.format(email=escape(email)))
+
+
+def page(body: str) -> str:
+    """Any small page in the same frame as the sign-in page (``body`` is trusted markup)."""
+    return _PAGE.format(body=body)
+

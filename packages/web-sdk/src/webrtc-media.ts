@@ -27,7 +27,9 @@ type IcePayload = {
 
 export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): SmallWebRtcSession {
   const baseUrl = options.gatewayUrl.replace(/\/$/, "");
-  const offerUrl = `${baseUrl}/sessions/${encodeURIComponent(options.sessionId)}/webrtc/offer?token=${encodeURIComponent(options.devToken)}`;
+  // The session token goes in a header, never the URL (URLs end up in proxy logs and history).
+  const offerUrl = `${baseUrl}/sessions/${encodeURIComponent(options.sessionId)}/webrtc/offer`;
+  const jsonHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${options.devToken}` };
 
   let connectionState: VoiceConnectionState = "disconnected";
   let pc: RTCPeerConnection | null = null;
@@ -67,7 +69,7 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
     }));
     await fetch(offerUrl, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({ pc_id: pcId, candidates }),
     });
   };
@@ -80,7 +82,7 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
     }
     await fetch(offerUrl, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({
         pc_id: pcId,
         candidates: [
@@ -181,7 +183,7 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
 
       const resp = await fetch(offerUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders,
         body: JSON.stringify({
           sdp: pc.localDescription?.sdp,
           type: pc.localDescription?.type,

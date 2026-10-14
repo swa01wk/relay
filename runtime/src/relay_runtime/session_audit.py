@@ -59,8 +59,8 @@ def build_audit_trail(events: list[RelayEvent], *, limit: int = 100) -> list[dic
 
     ``decision`` is ``pending`` / ``granted`` / ``rejected``; ``via`` is ``approval`` (a proposed
     action the user confirmed) or ``form_submit``; ``outcome`` is ``saved`` / ``unverified`` /
-    ``failed`` once the commit ran. Relay has no end-user identity yet, so entries identify the
-    session, not a person.
+    ``failed`` once the commit ran. ``end_user_id`` is the user the app started the session for
+    (``None`` when it did not say), so a decision can be traced to a person.
     """
     entries: dict[str, dict[str, Any]] = {}
     for event in sorted(events, key=lambda e: (e.metadata.timestamp, e.metadata.sequence)):
@@ -78,6 +78,7 @@ def build_audit_trail(events: list[RelayEvent], *, limit: int = 100) -> list[dic
                 "session_id": str(meta.session_id),
                 "trace_id": meta.trace_id,
                 "tool_name": payload.get("tool_name"),
+                "end_user_id": None,
                 "summary": None,
                 "arguments": None,
                 "requested_at": None,
@@ -91,6 +92,7 @@ def build_audit_trail(events: list[RelayEvent], *, limit: int = 100) -> list[dic
             },
         )
         entry["tool_name"] = entry["tool_name"] or payload.get("tool_name")
+        entry["end_user_id"] = entry["end_user_id"] or payload.get("end_user_id")
         if event.type == EventType.APPROVAL_REQUESTED:
             entry.update(requested_at=at, summary=payload.get("summary"), arguments=payload.get("arguments"))
         elif event.type == EventType.APPROVAL_GRANTED:
