@@ -197,7 +197,10 @@ class AuthService:
         if sensitive:
             proven = principal.reauthenticated_at
             if proven is None or datetime.now(timezone.utc) - proven > REAUTH_WINDOW:
-                raise ReauthRequired("enter your password to confirm this change")
+                raise ReauthRequired(
+                    "enter your password to confirm this change (if the relay CLI did not ask for it, "
+                    "update it: npm install -g @sumukhj1219-wkt-org/relay-cli@latest)"
+                )
         return principal
 
     async def reauthenticate(self, principal: Principal, password: str) -> None:

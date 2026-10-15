@@ -58,7 +58,10 @@ def canvas_instructions() -> str:
         "Submitting a form does not save anything: the values only reach you. Unless you call a "
         "tool that saves them, never say details were saved, updated or changed; confirm what "
         "you received instead. After showing results, reply with one short spoken sentence "
-        "about what is on screen; do not read table or chart values aloud."
+        "about what is on screen; do not read table or chart values aloud. Your text reply is "
+        "shown as a chat message and may be spoken, so write it as plain sentences: never put "
+        "tables, bullet lists, headings or other markdown in it — anything structured goes "
+        "through present_ui."
     )
 
 

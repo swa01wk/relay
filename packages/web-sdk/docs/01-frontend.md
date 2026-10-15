@@ -1,6 +1,6 @@
 # Frontend: add the Relay assistant to a web app
 
-Goal: a chat + voice assistant panel, and an area where AI-generated surfaces (tables, charts, forms, …) render with the app's own components. Works with any framework; examples use React. Do the steps in order and finish with the checklist.
+Goal: a chat + voice assistant panel for the conversation, and a **separate canvas** in the app's main view where AI-generated surfaces (tables, charts, forms, …) render with the app's own components. Works with any framework; examples use React. Do the steps in order and finish with the checklist.
 
 ## 1. Install and configure
 
@@ -17,6 +17,38 @@ NEXT_PUBLIC_GATEWAY_URL=http://localhost:8080   # Relay gateway
 NEXT_PUBLIC_RELAY_API_KEY=rpk_…                  # publishable key: `relay keys create --kind publishable`
 NEXT_PUBLIC_AGENT_ID=<agent_id>                  # must match the backend registration (02-backend.md)
 ```
+
+## Layout: chat for words, canvas for everything else
+
+Two regions, never mixed:
+
+| Region | Shows | Fed by |
+|---|---|---|
+| **Chat** (assistant panel) | Only conversation text: user messages, the assistant's short replies, one-line status notes ("Saved", "Approved") and errors | `TRANSCRIPT_FINAL`, `RESPONSE_DELTA` / `RESPONSE_COMPLETED`, `SESSION_ERROR` |
+| **Canvas** (in the app's main view, outside the chat) | Every surface: tables, charts, cards, kv, comparisons, markdown, notices, forms | `registerPlaygroundSurfaces` |
+
+- Do **not** render surfaces inside chat messages or the chat scroll, even small ones. A chat bubble is too narrow for tables and charts, and surfaces must stay on screen while the conversation scrolls on.
+- **The canvas is part of the page, not an overlay.** Never put it in a modal, dialog, sheet, popover or full-screen layer: it must not cover or hide the app's existing screen, and the user must be able to keep using the page around it.
+- **Surfaces outlive the chat panel.** Closing, collapsing or hiding the assistant panel must not remove them. They stay until new surfaces replace them, the user dismisses one (a small close button on each surface), or the user clears the canvas. Keep the surfaces in app state above the panel (for example in the provider), not inside the panel component.
+- Put the canvas where the user's work is: a "Results" section at the top of the main content column, or a wide split pane beside the content. The chat may be a docked side panel or, on small screens, a drawer — the drawer holds only the chat.
+- When new surfaces arrive, scroll the canvas into view (`scrollIntoView({ behavior: "smooth", block: "nearest" })`); don't open anything on top of the page.
+- `replace: true` (the default) clears the canvas and shows the new surfaces; `replace: false` adds them below what is there.
+- When surfaces arrive, the assistant's chat reply is one short sentence ("Your top 10 meetings are on screen."). Don't copy surface content into the chat.
+- On narrow screens, keep the canvas in the page flow (full width, above the content) and the chat as a drawer; closing the drawer reveals the canvas instead of discarding it.
+
+```text
+Desktop                                      Narrow screen
+┌──────────────────────────────┬──────────┐  ┌──────────────────────┐
+│ App header                   │          │  │ App header           │
+├──────────────────────────────┤  Chat    │  ├──────────────────────┤
+│ Results (canvas)        [×]  │  panel   │  │ Results (canvas) [×] │
+│  table / chart / form …      │  (text   │  ├──────────────────────┤
+├──────────────────────────────┤  only)   │  │ Existing page        │
+│ Existing page content        │          │  │                      │
+│ (still visible and usable)   │          │  │       [Chat ▸ drawer]│
+└──────────────────────────────┴──────────┘  └──────────────────────┘
+```
+- Prefer changing a component the app already shows (§4) over drawing a new surface.
 
 ## 2. Create the session (client-side) — the whole lifecycle
 
@@ -105,7 +137,7 @@ In React, put all of this in one provider component (`RelayProvider`) with a `us
 
 ## 3. Render surfaces
 
-`registerPlaygroundSurfaces` gives you `UiSurface[]` — already normalized and typed. Switch on `surface.kind` and render each with the app's components. All eight kinds must be handled:
+`registerPlaygroundSurfaces(session, ({ surfaces, replace }) => …)` gives you `UiSurface[]` — already normalized and typed — for the **canvas** (see Layout above; never the chat). Switch on `surface.kind` and render each with the app's components. All eight kinds must be handled:
 
 | `kind` | Fields | Render as (shadcn names; use the app's equivalents) |
 |---|---|---|
@@ -183,7 +215,8 @@ session.grantApproval(approvalId)   // or session.rejectApproval(approvalId)
 
 - [ ] Page loads with no console errors; connection state reaches `"ready"`.
 - [ ] Sending "hello" shows the user bubble once and a streamed assistant reply; the busy indicator stops.
-- [ ] A data request ("show … as a table", "chart …") renders a surface with the app's components.
+- [ ] A data request ("show … as a table", "chart …") renders a surface with the app's components **on the canvas, not in the chat**; the chat shows only the assistant's one-line reply.
+- [ ] The surface appears in the page without covering the existing screen, and stays after the assistant panel is closed; its close button removes only that surface.
 - [ ] Stop the gateway and send a message: an error is shown, nothing spins forever.
 - [ ] Voice: click to start, speak, see the live transcript and hear the reply; mute works.
 - [ ] For each advertised action: ask for something it covers (e.g. "orders over $500") — the existing component changes and no new surface appears.
@@ -198,5 +231,7 @@ session.grantApproval(approvalId)   // or session.rejectApproval(approvalId)
 | "Thinking…" never stops | `SESSION_ERROR` not handled, or busy not cleared on `TURN_COMPLETED` |
 | `window is not defined` / hydration errors | Session created during server rendering — move it to client code |
 | Raw `<b>`/JSON shown in chat | Rendering markdown or payload objects as text; use the surface renderers |
+| Tables, charts or cards appear inside the chat | Surfaces rendered in the message list. Render them on a canvas outside the chat (Layout section); the chat keeps only text |
+| Generated UI opens as an overlay over the app, and disappears when it is closed | The canvas was put in a modal or inside the assistant panel. Make it a section of the page (Layout section), keep surfaces in state above the panel, and give each surface its own close button |
 | "not connected" / connect fails although the gateway is healthy | Something called `sendState`/`sendText` before the WebSocket opened (e.g. from a `SESSION_READY` handler) — send after `connect()` resolves |
 | The agent draws a new table instead of filtering yours | Action not advertised (missing `spec`), registered after unmount, or its `description` doesn't say what it covers |
