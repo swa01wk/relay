@@ -187,6 +187,21 @@ const off = session.registerAction(
 session.sendState({ orders_table: { visible: true, filters, rows_shown: 21, total: 80 } })
 ```
 
+**Expose every screen interaction, not one example.** Go through each page and component of the app and register an action for every interaction a user does with the mouse that the assistant should be able to do for them:
+
+| Interaction in the app | Action to register |
+|---|---|
+| Filters, search boxes, date-range pickers on a list | `FILTER_<LIST>` with one parameter per filter, plus `reset` |
+| Sortable columns | `SORT_<LIST>` (`sort_by` enum of columns, `sort_order`), or a parameter of `FILTER_<LIST>` |
+| Detail pages / drawers | `OPEN_<ENTITY>` (`id`) that navigates or opens the drawer |
+| Navigation, tabs, sections | `NAVIGATE` (`page` enum of the app's routes) and `SWITCH_TAB` per tabbed view |
+| Row selection, highlighting | `SELECT_<ENTITY>` / `HIGHLIGHT_<ENTITY>` (`ids`) |
+| Chart controls (period, grouping, metric) | `SET_<CHART>_OPTIONS` with the same choices the controls offer |
+| Pre-filling an existing form | `PREFILL_<FORM>` with the form's fields (the user still submits it) |
+| Exports, view toggles, pagination | One action each when the app has them |
+
+Report the matching state with `sendState` (current page, filters, sort, selected ids, open record), so follow-ups build on what the user sees. Data changes do not go here: they are backend `side_effecting` tools (backend guide §0), so they get an approval.
+
 Rules: register before or after `connect()` (the SDK re-advertises on changes); unregister (`off()`) when the component unmounts; make the handler idempotent and return counts the agent can repeat; describe every parameter. In React, wrap this in a small `useRelayAction(name, handler, spec)` hook that registers in an effect and calls `off()` in its cleanup.
 
 ## 5. Optional: custom UI actions and shared state

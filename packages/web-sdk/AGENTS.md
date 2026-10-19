@@ -51,7 +51,8 @@ Who defines what:
 8. Tools that change data (refunds, updates) must be published with `"classification": "side_effecting"` in `GET /tools`; the model can only *propose* them, and they run only after a human approves (`onApprovalRequested` → `grantApproval`; the assistant then confirms in a follow-up message). Never mark them `read_only`.
 9. The browser holds only the project's **publishable** key (`rpk_…`) and the short-lived session token the gateway issues. Secret keys (`rsk_…`), the model API key and the tools signing secret never go into browser code.
 10. The tools service must verify `X-Relay-Signature-V2` on every request (backend guide §3) — it is reachable from the internet.
-11. If the app has signed-in users and the assistant touches per-user data, start sessions **on the server** with the secret key and `user` (frontend guide, "Apps where users sign in"), and filter every tool by the `X-Relay-User` id. The app's login cookie never reaches the tools service.
+11. **Decide the complete tool catalog yourself** from the app's data model and screens (backend guide §0): for every entity, list/search/get/aggregate plus create/update/delete and each state transition the app offers; then the cross-entity tools (search everything, overview, trends, rankings, comparisons, recent activity, "what needs attention", current user, data description, domain calculations). Do not ask the developer which tools to build and do not stop at the ones the request mentioned. On the frontend, register an action for every filter, sort, navigation, open-record, selection and chart control on screen (frontend guide §4).
+12. If the app has signed-in users and the assistant touches per-user data, start sessions **on the server** with the secret key and `user` (frontend guide, "Apps where users sign in"), and filter every tool by the `X-Relay-User` id. The app's login cookie never reaches the tools service.
 
 ## Reference implementation
 
