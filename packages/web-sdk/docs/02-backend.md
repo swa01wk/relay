@@ -258,6 +258,21 @@ def relay_user(headers) -> dict | None:   # only after relay_call_is_valid(...) 
 - [ ] `relay secrets list` shows `openai   set (…)`.
 - [ ] Ask a real question from the frontend with `agentId: "<agent_id>"`: tools are called and a surface arrives.
 - [ ] A request to the tools service with no signature, or a wrong one, is rejected with `401`.
+- [ ] `relay logs` lists the test conversation; `relay logs <session-id>` shows the question, the tools called and no errors.
+
+## 5. Watch it in production
+
+```bash
+relay logs                      # recent conversations: agent, start time, turns, errors, live or ended
+relay logs <session-id>         # one conversation: each question and answer, tools called, errors, approvals, tokens
+relay usage --days 30           # sessions, turns, errors, tokens and cost per day and per agent; calls, failures and timing per tool
+relay usage --json              # the same as JSON, for your own dashboards or alerts
+```
+
+- A tool with many `failed` calls or a high `max ms` in `relay usage` is the first thing to fix: the assistant cannot answer what that tool answers. `relay logs <session-id>` shows the error your tools service returned.
+- Questions in `relay logs` answered without the tool you expected mean the tool's `description` doesn't match how users ask (§0, Step 4).
+- Cost appears when the gateway knows the model's price; token counts are always there. They come from your model API key, so your model provider's bill is the source of truth.
+- The same data is available over HTTP with your account token (reference: `GET /v1/projects/{id}/sessions`, `…/usage`). Only your account sees your project's conversations.
 
 ## Common mistakes
 
@@ -273,4 +288,5 @@ def relay_user(headers) -> dict | None:   # only after relay_call_is_valid(...) 
 | A write tool never saves | The app must handle approvals (`onApprovalRequested` → `grantApproval`) — see the frontend guide §5 |
 | `400` from the tools API | Argument names in the schema don't match the function's parameters |
 | Every message: "The assistant couldn't complete that request" | The model rejected the call — usually an invalid or exhausted OpenAI key (`SESSION_ERROR` code `turn_failed`). Set it again with `relay secrets set openai` |
+| A user reports a wrong or failed answer | `relay logs` → find their session → `relay logs <session-id>` shows what was asked, which tools ran and the error |
 | Tools changed but the assistant doesn't see them | Run `relay agents push` again; running conversations keep the old version |

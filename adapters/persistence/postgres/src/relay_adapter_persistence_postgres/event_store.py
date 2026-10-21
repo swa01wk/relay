@@ -32,6 +32,8 @@ CREATE INDEX IF NOT EXISTS relay_events_type_created
     ON relay_events (type, created_at DESC);
 CREATE INDEX IF NOT EXISTS relay_events_created
     ON relay_events (created_at);
+CREATE INDEX IF NOT EXISTS relay_events_project_created
+    ON relay_events ((metadata->>'project_id'), created_at DESC);
 """
 
 
@@ -85,7 +87,7 @@ class PostgresEventStore(EventStore):
                 rows,
             )
 
-    async def list_sessions(self, *, limit: int = 50) -> list[dict[str, Any]]:
+    async def list_sessions(self, *, limit: int = 50, project_id: str | None = None) -> list[dict[str, Any]]:
         await self.connect()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
@@ -102,16 +104,24 @@ class PostgresEventStore(EventStore):
                        count(*) FILTER (WHERE type = 'SESSION_ERROR') AS errors,
                        bool_or(type = 'SESSION_ENDED') AS ended
                 FROM relay_events
+                WHERE ($2::text IS NULL OR metadata->>'project_id' = $2::text)
                 GROUP BY session_id
                 ORDER BY max(created_at) DESC
                 LIMIT $1
                 """,
                 limit,
+                project_id,
             )
         return [dict(row) for row in rows]
 
     async def list_by_types(
-        self, types: Sequence[str], *, limit: int = 500, session_id: str | None = None
+        self,
+        types: Sequence[str],
+        *,
+        limit: int = 500,
+        session_id: str | None = None,
+        project_id: str | None = None,
+        since: datetime | None = None,
     ) -> list[RelayEvent]:
         await self.connect()
         assert self._pool is not None
@@ -122,12 +132,16 @@ class PostgresEventStore(EventStore):
                 SELECT type, payload, metadata
                 FROM relay_events
                 WHERE type = ANY($1::text[]) AND ($3::uuid IS NULL OR session_id = $3::uuid)
+                  AND ($4::text IS NULL OR metadata->>'project_id' = $4::text)
+                  AND ($5::timestamptz IS NULL OR created_at >= $5::timestamptz)
                 ORDER BY created_at DESC, sequence DESC
                 LIMIT $2
                 """,
                 names,
                 limit,
                 session_id,
+                project_id,
+                since,
             )
         return [
             RelayEvent(

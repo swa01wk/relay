@@ -25,6 +25,11 @@ relay secrets set openai                     # paste your OpenAI key (hidden); o
 relay agents push orders.yaml                # your agent: manifest + prompt + tools URL
 relay agents list
 relay tools secret                           # verify Relay's calls in your tools service
+
+relay logs                                   # recent conversations with your assistant
+relay logs <session-id>                      # one conversation: messages, tools, errors, approvals, tokens
+relay usage --days 30                        # sessions, tokens, cost, errors per day/agent; calls and timing per tool
+relay usage --json                           # raw data for your own dashboards
 ```
 
 Then in the app:

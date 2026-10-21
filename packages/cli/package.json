@@ -1,6 +1,6 @@
 {
   "name": "@sumukhj1219-wkt-org/relay-cli",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "description": "Relay command line: sign in, manage devices, projects, API keys, agents and secrets.",
   "bin": {

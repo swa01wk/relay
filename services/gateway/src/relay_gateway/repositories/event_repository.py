@@ -24,13 +24,21 @@ class EventRepository:
     async def for_session(self, session_id: str) -> list[RelayEvent]:
         return await (await self._settled()).list_for_session(session_id)
 
-    async def session_summaries(self, *, limit: int) -> list[dict[str, Any]]:
-        return await (await self._settled()).list_sessions(limit=limit)
+    async def session_summaries(self, *, limit: int, project_id: str | None = None) -> list[dict[str, Any]]:
+        return await (await self._settled()).list_sessions(limit=limit, project_id=project_id)
 
     async def newest_of_types(
-        self, types: Sequence[str], *, limit: int, session_id: str | None = None
+        self,
+        types: Sequence[str],
+        *,
+        limit: int,
+        session_id: str | None = None,
+        project_id: str | None = None,
+        since: datetime | None = None,
     ) -> list[RelayEvent]:
-        return await (await self._settled()).list_by_types(types, limit=limit, session_id=session_id)
+        return await (await self._settled()).list_by_types(
+            types, limit=limit, session_id=session_id, project_id=project_id, since=since
+        )
 
     async def delete_older_than(self, cutoff: datetime) -> int:
         return await (await self._settled()).delete_older_than(cutoff)

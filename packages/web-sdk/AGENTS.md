@@ -20,6 +20,7 @@ relay secrets set openai              # their OpenAI API key — typed hidden or
 relay agents push <agent>.yaml        # after the tools service is deployed (02-backend.md)
 relay keys create --kind publishable  # rpk_… → the app's NEXT_PUBLIC_RELAY_API_KEY
 relay origins set https://<app-domain>   # limit where that key works
+relay logs                            # afterwards: recent conversations; relay logs <id> for one; relay usage for tokens, errors, tools
 ```
 
 Ask the developer to run `relay login`, `relay secrets set openai`, `relay agents push` and `relay keys create` themselves: login needs their browser, and changes ask for their password. If a command answers with a `429`, wait for the time it gives. Never write an API key, a secret key (`rsk_…`) or the tools signing secret into frontend code, a committed file or a command line.

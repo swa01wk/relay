@@ -39,6 +39,11 @@ Usage
 
   relay tools secret [--rotate] [--project <id>] Signing secret your tools service verifies Relay's calls with
 
+  relay logs [--limit <n>] [--project <id>]      Recent conversations with your assistant
+  relay logs <session-id> [--project <id>]       One conversation: messages, tool calls, errors, tokens
+  relay usage [--days <n>] [--project <id>]      Sessions, tokens, cost, errors and tool calls (default 7 days)
+                                                 Add --json to logs or usage for the raw data
+
 Keys
   publishable (rpk_…)  for the browser SDK: createRelaySession({ apiKey })
   secret (rsk_…)       for your server only; never ship it to a browser
@@ -55,6 +60,9 @@ const OPTIONS = {
   "no-browser": { type: "boolean" },
   all: { type: "boolean" },
   rotate: { type: "boolean" },
+  limit: { type: "string" },
+  days: { type: "string" },
+  json: { type: "boolean" },
   help: { type: "boolean", short: "h" },
 };
 
@@ -408,6 +416,96 @@ async function tools(action, _args, flags, out) {
   return 0;
 }
 
+// Conversation text comes from end users and the model: never let it drive the terminal.
+const clean = (text) => String(text ?? "").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
+const when = (iso) => (iso ? iso.slice(0, 16).replace("T", " ") : "?");
+const number = (n) => Number(n ?? 0).toLocaleString("en-US");
+const cost = (model) => (typeof model?.cost_usd === "number" ? ` · $${model.cost_usd.toFixed(4)}` : "");
+
+function positiveInt(value, name, fallback) {
+  if (value === undefined) return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`--${name} must be a positive whole number`);
+  return n;
+}
+
+async function logs(sessionId, _args, flags, out) {
+  const saved = signedIn(out);
+  if (!saved) return 1;
+  const base = `/v1/projects/${encodeURIComponent(projectId(flags, saved))}/sessions`;
+  if (!sessionId) {
+    const limit = positiveInt(flags.limit, "limit", 20);
+    const { sessions: list } = await authed(saved, `${base}?limit=${limit}`, {});
+    if (flags.json) {
+      out.log(JSON.stringify(list, null, 2));
+      return 0;
+    }
+    if (!list.length) out.log("No conversations yet.");
+    for (const row of list) {
+      const state = row.live ? "live" : row.ended ? "ended" : "idle";
+      const errors = row.errors ? `  ${row.errors} error${row.errors === 1 ? "" : "s"}` : "";
+      out.log(`${row.session_id}  ${clean(row.agent_id ?? "?").padEnd(16)}  ${when(row.started_at)}  ${String(row.turns).padStart(3)} turns  ${state}${errors}`);
+    }
+    if (list.length) out.log("\nOne conversation in full: relay logs <session-id>");
+    return 0;
+  }
+  const detail = await authed(saved, `${base}/${encodeURIComponent(sessionId)}`, {});
+  if (flags.json) {
+    out.log(JSON.stringify(detail, null, 2));
+    return 0;
+  }
+  out.log(`Session ${detail.session_id} · agent ${clean(detail.agent_id ?? "?")} · ${when(detail.started_at)} → ${when(detail.last_event_at)}${detail.live ? " (live)" : ""}`);
+  detail.turns.forEach((turn, i) => {
+    out.log(`\n#${i + 1}`);
+    if (turn.user_text) out.log(`  user:      ${clean(turn.user_text)}`);
+    if (turn.tool_names.length) out.log(`  tools:     ${[...new Set(turn.tool_names)].map(clean).join(", ")}`);
+    if (turn.assistant_text) out.log(`  assistant: ${clean(turn.assistant_text)}`);
+  });
+  if (detail.errors.length) {
+    out.log("\nErrors");
+    for (const e of detail.errors) out.log(`  ${when(e.at)}  ${clean(e.code)}  ${clean(e.message)}`);
+  }
+  for (const a of detail.approvals) out.log(`\nApproval: ${clean(a.tool_name)} → ${clean(a.decision)}${a.outcome ? ` (${clean(a.outcome)})` : ""}`);
+  const usage = detail.usage;
+  out.log(`\nModel: ${number(usage.model_calls)} calls, ${number(usage.total_tokens)} tokens${cost(usage)}`);
+  return 0;
+}
+
+async function usage(flags, out) {
+  const saved = signedIn(out);
+  if (!saved) return 1;
+  const days = positiveInt(flags.days, "days", 7);
+  const report = await authed(saved, `/v1/projects/${encodeURIComponent(projectId(flags, saved))}/usage?days=${days}`, {});
+  if (flags.json) {
+    out.log(JSON.stringify(report, null, 2));
+    return 0;
+  }
+  const t = report.total;
+  out.log(`Last ${report.days} day${report.days === 1 ? "" : "s"}: ${number(t.sessions)} sessions, ${number(t.turns)} turns, ${number(t.errors)} errors`);
+  out.log(`Model: ${number(t.model.model_calls)} calls, ${number(t.model.total_tokens)} tokens (${number(t.model.input_tokens)} in, ${number(t.model.output_tokens)} out)${cost(t.model)}`);
+  if (report.truncated) out.log("(busy period: only the most recent events are counted; use fewer --days)");
+  if (report.by_day.length) {
+    out.log("\nBy day (UTC)");
+    for (const d of report.by_day) {
+      out.log(`  ${d.date}  ${String(d.sessions).padStart(5)} sessions  ${String(d.turns).padStart(5)} turns  ${String(d.errors).padStart(3)} errors  ${number(d.model.total_tokens).padStart(10)} tokens${cost(d.model)}`);
+    }
+  }
+  if (report.by_agent.length) {
+    out.log("\nBy agent");
+    for (const a of report.by_agent) {
+      out.log(`  ${clean(a.agent_id ?? "(started earlier)").padEnd(18)}  ${String(a.sessions).padStart(5)} sessions  ${number(a.model.total_tokens).padStart(10)} tokens${cost(a.model)}`);
+    }
+  }
+  if (report.tools.length) {
+    out.log("\nTools");
+    for (const tool of report.tools) {
+      const timing = tool.avg_ms === null ? "" : `  avg ${Math.round(tool.avg_ms)} ms, max ${Math.round(tool.max_ms)} ms`;
+      out.log(`  ${clean(tool.name).padEnd(24)}  ${String(tool.calls).padStart(5)} calls  ${String(tool.failures).padStart(3)} failed${timing}`);
+    }
+  }
+  return 0;
+}
+
 export async function main(argv, out = console) {
   let parsed;
   try {
@@ -446,6 +544,10 @@ export async function main(argv, out = console) {
         return await secrets(action, rest, flags, out);
       case "tools":
         return await tools(action, rest, flags, out);
+      case "logs":
+        return await logs(action, rest, flags, out);
+      case "usage":
+        return await usage(flags, out);
       default:
         out.error(`relay: unknown command "${command}"\nRun \`relay help\` for usage.`);
         return 2;

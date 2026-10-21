@@ -97,7 +97,7 @@ pnpm --filter @sumukhj1219-wkt-org/relay-cli test
 ## Known gaps (don't assume these exist)
 
 - The hosted service is not deployed: no public gateway URL (the CLI defaults to `http://localhost:8080`), no HTTPS/TURN setup, no billing, no two-factor login. Emails (confirmation, password reset) need `RELAY_SMTP_HOST` and `RELAY_PUBLIC_URL`; without SMTP they are printed to the gateway log.
-- Speech is still gateway-wide: voice sessions of every project use the operator's Deepgram key (only the LLM key is per project). No usage metering or billing per project; `/metrics` has no project label.
+- Speech is still gateway-wide: voice sessions of every project use the operator's Deepgram key (only the LLM key is per project). Developers see their project's sessions and usage (`relay logs`, `relay usage`, read from the event log), but there is no metering for billing; `/metrics` has no project label.
 - Only OpenAI keys can be stored. Restricting the gateway's outbound network is still recommended on top of per-call address pinning.
 - `agents/*.yaml` on the gateway and the mortgage default agent serve dev sessions only (`RELAY_DEV_SESSIONS=1`).
 - `?token=` in URLs is still accepted for SDK 0.1.x (newer SDKs use a header / WebSocket subprotocol); drop it once old SDKs are gone. Operator endpoints use static tokens (`RELAY_ADMIN_TOKEN`, `RELAY_METRICS_TOKEN`) and show every project.

@@ -24,14 +24,22 @@ class EventStore(ABC):
     async def list_for_session(self, session_id: str, *, after_sequence: int = -1) -> list[RelayEvent]:
         ...
 
-    async def list_sessions(self, *, limit: int = 50) -> list[dict[str, Any]]:
-        """Session summaries, most recently active first (see ``session_audit.summarize_sessions``)."""
+    async def list_sessions(self, *, limit: int = 50, project_id: str | None = None) -> list[dict[str, Any]]:
+        """Session summaries, most recently active first (see ``session_audit.summarize_sessions``);
+        only one project's sessions when ``project_id`` is given."""
         raise NotImplementedError
 
     async def list_by_types(
-        self, types: Sequence[str], *, limit: int = 500, session_id: str | None = None
+        self,
+        types: Sequence[str],
+        *,
+        limit: int = 500,
+        session_id: str | None = None,
+        project_id: str | None = None,
+        since: datetime | None = None,
     ) -> list[RelayEvent]:
-        """The newest ``limit`` events of the given types, across sessions unless one is given."""
+        """The newest ``limit`` events of the given types, across sessions unless one is given;
+        optionally only one project's, and only events recorded at or after ``since``."""
         raise NotImplementedError
 
     async def delete_older_than(self, cutoff: datetime) -> int:

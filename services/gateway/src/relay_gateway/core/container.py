@@ -82,6 +82,7 @@ from relay_gateway.services.auth_service import AuthService
 from relay_gateway.services.device_login_service import DeviceLoginService
 from relay_gateway.services.metrics_service import MetricsService
 from relay_gateway.core.crypto import SecretBox
+from relay_gateway.services.project_activity_service import ProjectActivityService
 from relay_gateway.services.project_agent_service import ProjectAgentService
 from relay_gateway.services.key_alert_service import KeyAlertService
 from relay_gateway.services.project_service import ProjectService
@@ -312,6 +313,7 @@ session_service = SessionService(
 stream_service = StreamService(session_manager, session_repository)
 realtime_service = RealtimeService(session_manager)
 admin_service = AdminService(session_repository, event_repository)
+project_activity_service = ProjectActivityService(session_repository, event_repository)
 metrics_service = MetricsService(metrics_bridge)
 retention_service = RetentionService(event_repository)
 

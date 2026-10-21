@@ -19,7 +19,7 @@ class FakeTenantWorld:
     """Stands in for customers' tools services and for the model API.
 
     ``requests`` records every call a tools service received; ``model_keys`` every API key a
-    model provider was built with.
+    model provider was built with. Set ``usage`` to a provider usage chunk to report tokens.
     """
 
     TOOLS = [
@@ -31,6 +31,7 @@ class FakeTenantWorld:
         self.requests: list[httpx.Request] = []
         self.model_keys: list[str] = []
         self.down_hosts: set[str] = set()
+        self.usage: dict[str, Any] | None = None
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -69,6 +70,7 @@ class FakeTenantWorld:
 
     def provider(self, api_key: str, model: str | None) -> ModelProvider:
         self.model_keys.append(api_key)
+        world = self
 
         class Scripted(ModelProvider):
             async def stream_completion(self, session_id, *, messages, tools=None) -> AsyncIterator[dict[str, Any]]:
@@ -77,6 +79,8 @@ class FakeTenantWorld:
                     yield {"type": "tool_calls", "calls": [{"id": "c1", "name": "list_orders", "arguments": "{}"}]}
                 else:
                     yield {"type": "token", "text": "You have one order."}
+                if world.usage:
+                    yield {"type": "usage", **world.usage}
 
             async def cancel(self, session_id: str) -> None:
                 del session_id

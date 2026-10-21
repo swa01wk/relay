@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from relay_gateway.controllers import (
     account_controller,
+    activity_controller,
     admin_controller,
     agent_controller,
     auth_controller,
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
         auth_controller,
         account_controller,
         agent_controller,
+        activity_controller,
         session_controller,
         realtime_controller,
         stream_controller,

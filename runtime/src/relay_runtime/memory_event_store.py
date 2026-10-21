@@ -26,17 +26,27 @@ class MemoryEventStore(EventStore):
             if e.metadata.session_id == session_id and e.metadata.sequence > after_sequence
         ]
 
-    async def list_sessions(self, *, limit: int = 50) -> list[dict[str, Any]]:
-        return summarize_sessions(self._events, limit=limit)
+    async def list_sessions(self, *, limit: int = 50, project_id: str | None = None) -> list[dict[str, Any]]:
+        events = [e for e in self._events if project_id is None or e.metadata.project_id == project_id]
+        return summarize_sessions(events, limit=limit)
 
     async def list_by_types(
-        self, types: Sequence[str], *, limit: int = 500, session_id: str | None = None
+        self,
+        types: Sequence[str],
+        *,
+        limit: int = 500,
+        session_id: str | None = None,
+        project_id: str | None = None,
+        since: datetime | None = None,
     ) -> list[RelayEvent]:
         wanted = {str(getattr(t, "value", t)) for t in types}
         matching = [
             e
             for e in self._events
-            if e.type.value in wanted and (session_id is None or e.metadata.session_id == session_id)
+            if e.type.value in wanted
+            and (session_id is None or e.metadata.session_id == session_id)
+            and (project_id is None or e.metadata.project_id == project_id)
+            and (since is None or e.metadata.timestamp >= since)
         ]
         return matching[-limit:][::-1]
 
