@@ -208,6 +208,7 @@ class AgentRuntime:
             "live_state_version": lambda: context.state_version,
             "tool_results": context.tool_results_for_agent(),
             "client_actions": list(context.client_actions),
+            "open_forms": list(context.open_forms.values()),
             "request_action_result": request_action_result,
             "record_model_usage": record_model_usage,
             "emit_event": emit_event,

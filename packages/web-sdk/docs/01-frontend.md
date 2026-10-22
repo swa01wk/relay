@@ -30,6 +30,7 @@ Two regions, never mixed:
 - Do **not** render surfaces inside chat messages or the chat scroll, even small ones. A chat bubble is too narrow for tables and charts, and surfaces must stay on screen while the conversation scrolls on.
 - **The canvas is part of the page, not an overlay.** Never put it in a modal, dialog, sheet, popover or full-screen layer: it must not cover or hide the app's existing screen, and the user must be able to keep using the page around it.
 - **Surfaces outlive the chat panel.** Closing, collapsing or hiding the assistant panel must not remove them. They stay until new surfaces replace them, the user dismisses one (a small close button on each surface), or the user clears the canvas. Keep the surfaces in app state above the panel (for example in the provider), not inside the panel component.
+- **The user can always hide the generated UI** (required, see "Hide and show the canvas" below): a **Hide** button on the canvas collapses it to a one-line bar, each surface can be **minimized** to its title row or **closed**, and **Clear** removes them all. Hidden or empty, the canvas takes no space beyond that bar.
 - Put the canvas where the user's work is: a "Results" section at the top of the main content column, or a wide split pane beside the content. The chat may be a docked side panel or, on small screens, a drawer — the drawer holds only the chat.
 - When new surfaces arrive, scroll the canvas into view (`scrollIntoView({ behavior: "smooth", block: "nearest" })`); don't open anything on top of the page.
 - `replace: true` (the default) clears the canvas and shows the new surfaces; `replace: false` adds them below what is there.
@@ -41,7 +42,7 @@ Desktop                                      Narrow screen
 ┌──────────────────────────────┬──────────┐  ┌──────────────────────┐
 │ App header                   │          │  │ App header           │
 ├──────────────────────────────┤  Chat    │  ├──────────────────────┤
-│ Results (canvas)        [×]  │  panel   │  │ Results (canvas) [×] │
+│ Results (3)  [Hide] [Clear]  │  panel   │  │ Results (3)   [Hide] │
 │  table / chart / form …      │  (text   │  ├──────────────────────┤
 ├──────────────────────────────┤  only)   │  │ Existing page        │
 │ Existing page content        │          │  │                      │
@@ -49,6 +50,90 @@ Desktop                                      Narrow screen
 └──────────────────────────────┴──────────┘  └──────────────────────┘
 ```
 - Prefer changing a component the app already shows (§4) over drawing a new surface.
+
+### Hide and show the canvas (required)
+
+Generated UI must never get in the way of the app. Give the user these controls, all kept in the same app-level state as the surfaces:
+
+| Control | Where | Does |
+|---|---|---|
+| **Hide** / **Show results (n)** | Canvas header; when hidden, a slim bar in the page flow (not a floating overlay) | Collapses the whole canvas to that bar and back. Surfaces are kept, not discarded |
+| **Minimize** (`–`) / expand | Each surface's title row | Collapses one surface to its title row |
+| **Close** (`×`) | Each surface's title row | Removes that surface |
+| **Clear** | Canvas header | Removes every surface; the canvas disappears entirely |
+| **Show results** | Assistant panel header (optional) | Same as the bar's button, for when the canvas is scrolled out of view |
+
+Rules:
+- **New surfaces show the canvas again** (the user just asked for them) and scroll it into view. Hiding is for the results the user has already seen.
+- Hidden and empty states take no space: no empty "Results" box, no reserved height.
+- The buttons are real `<button>`s with labels (`aria-label="Hide results"`), and the hide toggle sets `aria-expanded` and `aria-controls` on the canvas.
+- Remember `hidden` across page navigation within the app (keep it in the provider or `sessionStorage`), so moving between pages doesn't reopen results the user hid.
+- A form surface the user is filling in is never removed by **Hide** — hiding only collapses it; values survive.
+
+```tsx
+"use client"
+import { useState } from "react"
+import type { UiSurface } from "@sumukhj1219-wkt-org/relay-web-sdk"
+
+// Keep `surfaces` and `hidden` in your provider (above the chat panel); shown here as props.
+export function ResultsCanvas({
+  surfaces, hidden, setHidden, onClose, onClear, renderSurface,
+}: {
+  surfaces: UiSurface[]
+  hidden: boolean
+  setHidden: (hidden: boolean) => void
+  onClose: (index: number) => void
+  onClear: () => void
+  renderSurface: (surface: UiSurface) => React.ReactNode   // your per-kind renderers (§3)
+}) {
+  const [minimized, setMinimized] = useState<Record<string, boolean>>({})
+  if (surfaces.length === 0) return null
+  return (
+    <section aria-label="Assistant results" className="border-b">
+      <div className="flex items-center gap-2 px-4 py-2">
+        <h2 className="text-sm font-medium">Results ({surfaces.length})</h2>
+        <button
+          type="button"
+          aria-expanded={!hidden}
+          aria-controls="relay-canvas"
+          onClick={() => setHidden(!hidden)}
+          className="ml-auto text-sm"
+        >
+          {hidden ? `Show results (${surfaces.length})` : "Hide"}
+        </button>
+        {!hidden && <button type="button" onClick={onClear} className="text-sm">Clear</button>}
+      </div>
+      {/* Hidden with CSS, not unmounted, so half-filled forms keep their values. */}
+      <div id="relay-canvas" hidden={hidden} className="space-y-4 px-4 pb-4">
+        {surfaces.map((surface, i) => {
+          const key = surface.id ?? String(i)
+          const isMin = minimized[key] ?? false
+          return (
+            <article key={key} className="rounded-lg border">
+              <header className="flex items-center gap-2 px-3 py-2">
+                <h3 className="text-sm font-medium">{surface.title ?? surface.kind}</h3>
+                <button
+                  type="button"
+                  aria-label={isMin ? "Expand" : "Minimize"}
+                  aria-expanded={!isMin}
+                  onClick={() => setMinimized((m) => ({ ...m, [key]: !isMin }))}
+                  className="ml-auto"
+                >
+                  {isMin ? "+" : "–"}
+                </button>
+                <button type="button" aria-label="Close" onClick={() => onClose(i)}>×</button>
+              </header>
+              <div hidden={isMin} className="px-3 pb-3">{renderSurface(surface)}</div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+```
+
+In the `registerPlaygroundSurfaces` callback, update the provider's surfaces and call `setHidden(false)` so new results are visible.
 
 ## 2. Create the session (client-side) — the whole lifecycle
 
@@ -156,6 +241,22 @@ Helpers:
 - `surfaceToCsv(surface, rows?)` → CSV string for `table`, `chart`, `comparison`, `kv` (pass the filtered/sorted rows for tables). Download it with a `Blob` + `<a download>`.
 - Form values: `number` fields → `Number(value)` or `null`; `checkbox` → boolean.
 - **Saving forms (`submitTool`).** The agent can bind a form to a backend write tool; Relay builds its fields from the tool's schema and saves the submission through that tool (the binding lives on the server, so the browser cannot change which tool runs). Show progress per form: set "Saving…" on submit, then listen for `COMMIT_VERIFIED` (`payload.form_id` → "Saved") and `ERROR` with `payload.message === "commit_failed"` (`payload.form_id`, `payload.error` → show it and re-enable the form so the user can fix and resubmit). Refresh any on-screen data after `COMMIT_VERIFIED`. The assistant then confirms in chat; the runtime's follow-up message text starts with `[Action approved|rejected|failed]` — show it as a short status note, not a user bubble.
+- **Filling forms from the chat (required).** While a form is on screen, users often type or say the values instead ("the title is Login broken, severity high, due next Friday"). The assistant then sends a `FILL_FORM` action with only those fields, already checked against the form (choices matched to the options, numbers and yes/no converted, dates as `YYYY-MM-DD`, unknown fields dropped). Handle it with `registerFormFill` and **merge** the values into that form's current values — keep what the user already typed in other fields, never submit, and briefly highlight the fields that changed. The user still reviews and presses the form's button; for a form with `submitTool` that is still the approval that saves it. If the form is no longer open, throw: the assistant is told and shows the form again with the values prefilled.
+
+  ```tsx
+  import { registerFormFill } from "@sumukhj1219-wkt-org/relay-web-sdk"
+
+  // Keep every open form's values in app state keyed by form id (also survives hide/show):
+  // const [formValues, setFormValues] = useState<Record<string, Record<string, string | number | boolean>>>({})
+  const offFill = registerFormFill(session, ({ formId, values }) => {     // before connect()
+    if (!openFormIds.current.has(formId)) throw new Error("form is not open")
+    setFormValues((all) => ({ ...all, [formId]: { ...all[formId], ...values } }))
+    flashFields(formId, Object.keys(values))                              // optional highlight
+  })
+  // on unmount: offFill()
+  ```
+
+  Render form inputs as **controlled** inputs from `formValues[form.id]` (seeded from each field's `defaultValue` when the surface arrives), so a fill shows up immediately; uncontrolled inputs ignore it.
 
 Build one renderer component per surface kind from your own design system (e.g. shadcn Table, Card, Alert, a Recharts chart); the surface types in `src/ui-surfaces.ts` list every field.
 
@@ -232,6 +333,9 @@ session.grantApproval(approvalId)   // or session.rejectApproval(approvalId)
 - [ ] Sending "hello" shows the user bubble once and a streamed assistant reply; the busy indicator stops.
 - [ ] A data request ("show … as a table", "chart …") renders a surface with the app's components **on the canvas, not in the chat**; the chat shows only the assistant's one-line reply.
 - [ ] The surface appears in the page without covering the existing screen, and stays after the assistant panel is closed; its close button removes only that surface.
+- [ ] **Hide** collapses the canvas to a one-line bar and the page content moves up; **Show results** brings the same surfaces back; minimize collapses one surface; **Clear** removes the canvas entirely; a half-filled form keeps its values after hide/show.
+- [ ] With the canvas hidden, asking for new data shows the canvas again with the new surfaces.
+- [ ] With a form on screen, type two of its values in the chat ("set the title to X and priority to high"): those fields change in the form, other fields keep what you typed, nothing is submitted, and the assistant asks you to review and submit.
 - [ ] Stop the gateway and send a message: an error is shown, nothing spins forever.
 - [ ] Voice: click to start, speak, see the live transcript and hear the reply; mute works.
 - [ ] For each advertised action: ask for something it covers (e.g. "orders over $500") — the existing component changes and no new surface appears.
@@ -249,4 +353,8 @@ session.grantApproval(approvalId)   // or session.rejectApproval(approvalId)
 | Tables, charts or cards appear inside the chat | Surfaces rendered in the message list. Render them on a canvas outside the chat (Layout section); the chat keeps only text |
 | Generated UI opens as an overlay over the app, and disappears when it is closed | The canvas was put in a modal or inside the assistant panel. Make it a section of the page (Layout section), keep surfaces in state above the panel, and give each surface its own close button |
 | "not connected" / connect fails although the gateway is healthy | Something called `sendState`/`sendText` before the WebSocket opened (e.g. from a `SESSION_READY` handler) — send after `connect()` resolves |
+| Results can't be hidden, or keep covering the page | The canvas has no Hide / minimize / Clear controls, or is an overlay. Add the controls from "Hide and show the canvas" and keep the canvas in the page flow |
+| Values given in the chat never appear in the form | No `registerFormFill` handler (the action fails and the assistant redraws the form), or the inputs are uncontrolled. Register it before `connect()` and render inputs from the form's values in state |
+| A chat fill wipes what the user already typed | The handler replaced the form's values instead of merging (`{ ...current, ...values }`) |
+| Form values are lost after hiding the results | The canvas was unmounted on hide. Hide it with the `hidden` attribute or CSS instead |
 | The agent draws a new table instead of filtering yours | Action not advertised (missing `spec`), registered after unmount, or its `description` doesn't say what it covers |

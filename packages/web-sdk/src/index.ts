@@ -7,6 +7,7 @@ import {
 } from "./webrtc-media.js";
 
 export {
+  FILL_FORM_ACTION,
   FORM_SUBMIT_EVENT,
   PRESENT_UI_ACTION,
   SHOW_TABLE_ACTION,
@@ -14,6 +15,7 @@ export {
   normalizePresentUiParams,
   normalizeTableSurface,
   normalizeUiSurface,
+  registerFormFill,
   registerPlaygroundSurfaces,
   submitForm,
   surfaceToCsv,
@@ -26,6 +28,7 @@ export type {
   UiComparisonSurface,
   UiFormField,
   UiFormFieldType,
+  UiFormFill,
   UiFormSurface,
   UiMarkdownSurface,
   UiKeyValueSurface,

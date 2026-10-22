@@ -35,6 +35,12 @@ FORM_SUBMIT_EVENT = "ui.form_submit"
 FORM_SUBMISSION_PREFIX = "[Form submitted]"
 _MAX_FORM_VALUE_CHARS = 500
 
+# Values the user gives in chat go into a form that is already on screen (never saved by this).
+FILL_FORM_ACTION = "FILL_FORM"
+FILL_FORM_TOOL_NAME = "fill_form"
+MAX_OPEN_FORMS = 10
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
 _PRESENT_UI_DESCRIPTION = (
     "Show structured results on the user's screen: table, kv (key/value details), cards, "
     "chart, comparison (2-4 entities side by side), markdown (formatted explanation), notice, "
@@ -311,3 +317,145 @@ def form_fields_from_schema(
             field["placeholder"] = str(prop["description"])[:80]
         fields.append(field)
     return fields
+
+
+def open_forms_from_present_ui(params: dict[str, Any]) -> list[dict[str, Any]]:
+    """The forms in a (sanitized) ``present_ui`` payload, as the runtime remembers them."""
+    forms: list[dict[str, Any]] = []
+    for surface in params.get("surfaces") or []:
+        if not isinstance(surface, dict) or surface.get("kind") != "form":
+            continue
+        fields = [
+            {
+                "name": str(f["name"]),
+                "label": str(f.get("label") or _label(str(f["name"]))),
+                "type": f.get("type") if f.get("type") in FORM_FIELD_TYPES else "text",
+                "required": bool(f.get("required")),
+                **({"options": [str(o) for o in f["options"]]} if isinstance(f.get("options"), list) else {}),
+            }
+            for f in surface.get("fields") or []
+            if isinstance(f, dict) and f.get("name")
+        ][:MAX_FORM_FIELDS]
+        if fields:
+            forms.append(
+                {
+                    "id": str(surface.get("id") or "form"),
+                    "title": str(surface.get("title") or ""),
+                    "submit_label": str(surface.get("submit_label") or "Submit"),
+                    "fields": fields,
+                }
+            )
+    return forms
+
+
+def fill_form_tool(open_forms: list[dict[str, Any]]) -> dict[str, Any]:
+    """Model tool that puts values from the conversation into a form already on screen."""
+    return {
+        "type": "function",
+        "function": {
+            "name": FILL_FORM_TOOL_NAME,
+            "description": (
+                "Put values the user gave in the conversation into a form that is on their screen. "
+                "Only the fields you pass change; the user still reviews and submits the form. "
+                "Nothing is saved by this."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["form_id", "values"],
+                "properties": {
+                    "form_id": {"type": "string", "enum": [f["id"] for f in open_forms]},
+                    "values": {
+                        "type": "object",
+                        "description": "Field name → value, only for fields the user actually gave",
+                    },
+                },
+            },
+        },
+    }
+
+
+def fill_form_instructions(open_forms: list[dict[str, Any]]) -> str:
+    described = "; ".join(
+        f'{form["id"]} ("{form["title"]}"): '
+        + ", ".join(
+            f'{f["name"]} ({f["type"]}{": " + "|".join(f["options"]) if f.get("options") else ""})'
+            for f in form["fields"]
+        )
+        for form in open_forms
+    )
+    return (
+        f"Forms on the user's screen: {described}. When the user gives values for one of these "
+        "forms in the conversation (typed or spoken), call fill_form with only the fields they "
+        "gave, instead of showing the form again. Use dates as YYYY-MM-DD and one of the listed "
+        "options for choice fields. Never guess values the user did not give. Filling does not "
+        "save anything: afterwards say in one sentence what you filled in and ask the user to "
+        "check it and press the form's submit button; mention fields you could not fill."
+    )
+
+
+def _coerce_form_value(field: dict[str, Any], value: Any) -> tuple[Any, str | None]:
+    kind = field["type"]
+    if kind == "checkbox":
+        if isinstance(value, bool):
+            return value, None
+        text = str(value).strip().lower()
+        if text in ("true", "yes", "y", "1", "on", "checked"):
+            return True, None
+        if text in ("false", "no", "n", "0", "off", "unchecked"):
+            return False, None
+        return None, "expected yes or no"
+    if kind == "number":
+        if isinstance(value, bool):
+            return None, "expected a number"
+        if isinstance(value, (int, float)):
+            return value, None
+        try:
+            number = float(str(value).replace(",", "").strip())
+        except ValueError:
+            return None, "expected a number"
+        return (int(number) if number.is_integer() else number), None
+    text = str(value).strip()[:_MAX_FORM_VALUE_CHARS]
+    if not text:
+        return None, "empty"
+    if kind == "select":
+        match = next((o for o in field.get("options") or [] if o.lower() == text.lower()), None)
+        return (match, None) if match is not None else (None, f"must be one of {field.get('options') or []}")
+    if kind == "date" and not _DATE.match(text):
+        return None, "expected YYYY-MM-DD"
+    if kind == "email" and ("@" not in text or " " in text):
+        return None, "expected an email address"
+    return text, None
+
+
+def sanitize_form_fill(
+    arguments: dict[str, Any], open_forms: list[dict[str, Any]]
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Check a ``fill_form`` call against the form's fields: ``(action params, report for the model)``.
+
+    Unknown fields and values that do not fit a field are left out and reported, so the model
+    can ask the user again; ``None`` params means nothing could be filled.
+    """
+    form_id = str(arguments.get("form_id") or "")
+    form = next((f for f in open_forms if f["id"] == form_id), None)
+    if form is None:
+        return None, {"error": "form_not_on_screen", "open_forms": [f["id"] for f in open_forms]}
+    raw = arguments.get("values")
+    fields = {f["name"]: f for f in form["fields"]}
+    values: dict[str, Any] = {}
+    rejected: dict[str, str] = {}
+    for name, value in (raw.items() if isinstance(raw, dict) else []):
+        field = fields.get(str(name))
+        if field is None:
+            rejected[str(name)] = "no such field"
+            continue
+        if value is None:
+            continue
+        coerced, problem = _coerce_form_value(field, value)
+        if problem:
+            rejected[str(name)] = problem
+        else:
+            values[str(name)] = coerced
+    report: dict[str, Any] = {"filled": sorted(values), **({"rejected": rejected} if rejected else {})}
+    if not values:
+        return None, {"error": "nothing_to_fill", **report}
+    return {"form_id": form_id, "values": values}, report

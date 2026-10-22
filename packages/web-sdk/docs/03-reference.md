@@ -59,6 +59,7 @@ Every event: `{type, metadata: {session_id, sequence, turn_id?, trace_id, event_
 |---|---|---|
 | `PRESENT_UI` | `{surfaces: Surface[], replace: boolean}` | `registerPlaygroundSurfaces` |
 | `SHOW_TABLE` | one table surface | `registerPlaygroundSurfaces` |
+| `FILL_FORM` | `{form_id, values}` — values the user gave in the chat for a form on screen, already matched to its fields | `registerFormFill(session, ({ formId, values }) => …)` — merge into the form, never submit; throw if the form is not open. Offered to the model as `fill_form` only while a form it showed is unsubmitted |
 | App-defined with a spec (e.g. `FILTER_DEALS_TABLE`) | per the spec's JSON schema | `registerAction(name, handler, spec)` — offered to the model as tool `ui_<NAME>`; the handler's return value is the result the model reads |
 | App-defined without a spec | whatever a custom agent sends | `registerAction(name, handler)` |
 
@@ -83,7 +84,7 @@ Field types for forms: `text`, `textarea`, `number`, `date`, `email`, `select` (
 
 Session: `createRelaySession(options)` → `connect`, `disconnect`, `sendText`, `on`, `onConnectionState`, `onVoiceState`, `onAudioLevel`, `connectVoice`, `disconnectVoice`, `setMicMuted`, `cancelVoiceUtterance`, `registerAction`, `sendState`, `onStateConflict`, `sendEvent`, `onApprovalRequested`, `grantApproval`, `rejectApproval`, and getters `connectionState`, `voiceState`, `sessionId`, `stateVersion`. Also `fetchHealth(gatewayUrl)`, `createDevSession(...)`.
 
-Surfaces: `registerPlaygroundSurfaces`, `submitForm`, `surfaceToCsv`, `normalizeUiSurface`, `normalizePresentUiParams`, `normalizeTableSurface`, `normalizeChartSurface`, constants `PRESENT_UI_ACTION`, `SHOW_TABLE_ACTION`, `FORM_SUBMIT_EVENT`, and the `Ui*` types.
+Surfaces: `registerPlaygroundSurfaces`, `submitForm`, `registerFormFill` (`UiFormFill`), `surfaceToCsv`, `normalizeUiSurface`, `normalizePresentUiParams`, `normalizeTableSurface`, `normalizeChartSurface`, constants `PRESENT_UI_ACTION`, `SHOW_TABLE_ACTION`, `FORM_SUBMIT_EVENT`, `FILL_FORM_ACTION`, and the `Ui*` types.
 
 ## Limits and sign-in rules
 

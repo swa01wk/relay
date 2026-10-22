@@ -25,6 +25,11 @@ from relay_runtime.model_router import ModelRouter
 from relay_runtime.ports.agent import AgentAdapter
 from relay_runtime.tool_registry import ToolClassification, ToolRegistry
 from relay_runtime.ui_surfaces import (
+    FILL_FORM_ACTION,
+    FILL_FORM_TOOL_NAME,
+    fill_form_instructions,
+    fill_form_tool,
+    sanitize_form_fill,
     FORM_SUBMISSION_PREFIX,
     PRESENT_UI_ACTION,
     PRESENT_UI_TOOL_NAME,
@@ -53,7 +58,7 @@ def canvas_instructions() -> str:
         "context), then call present_ui. For a chart, pass numbers (not strings) in data and "
         "pick the chart_type that fits. Use comparison to put 2-4 entities side by side, "
         "markdown for a formatted explanation, and a form when you need several details from "
-        "the user (give it an id). "
+        "the user (give it an id, and prefill any fields the user already gave you). "
         f"A message starting with {FORM_SUBMISSION_PREFIX!r} is the user's form submission. "
         "Submitting a form does not save anything: the values only reach you. Unless you call a "
         "tool that saves them, never say details were saved, updated or changed; confirm what "
@@ -232,6 +237,7 @@ class ToolUsingAgent(AgentAdapter):
         client_tools = {
             f"{CLIENT_TOOL_PREFIX}{action['name']}": action["name"] for action in client_actions
         }
+        open_forms = (context.get("open_forms") or []) if request_action_result else []
         messages: list[dict[str, Any]] = [{"role": "system", "content": self._system_prompt}]
         if self._screen_formatter is not None:
             screen = self._screen_formatter(_screen_state(context))
@@ -250,6 +256,9 @@ class ToolUsingAgent(AgentAdapter):
             if client_tools:
                 tools.extend(client_action_tools(client_actions))
                 canvas = f"{canvas} {screen_first_instructions()}"
+            if open_forms:
+                tools.append(fill_form_tool(open_forms))
+                canvas = f"{canvas} {fill_form_instructions(open_forms)}"
             if self._instructions:
                 canvas = f"{canvas} {self._instructions}"
             messages.append({"role": "system", "content": canvas})
@@ -312,6 +321,7 @@ class ToolUsingAgent(AgentAdapter):
                         request_approval=request_approval,
                         client_tools=client_tools,
                         request_action_result=request_action_result,
+                        open_forms=open_forms,
                     )
                     for call in calls
                 )
@@ -337,6 +347,7 @@ async def run_model_tool_call(
     request_approval: Any = None,
     client_tools: dict[str, str] | None = None,
     request_action_result: Any = None,
+    open_forms: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Execute one model tool call; errors go back to the model instead of raising.
 
@@ -364,6 +375,12 @@ async def run_model_tool_call(
             return {"error": "no_valid_surfaces", "allowed_kinds": list(SURFACE_KINDS)}
         await request_action(PRESENT_UI_ACTION, params)
         return {"shown": len(params["surfaces"])}
+    if name == FILL_FORM_TOOL_NAME and open_forms and request_action_result is not None:
+        params, report = sanitize_form_fill(arguments, open_forms)
+        if params is None:
+            return report
+        outcome, result = await request_action_result(FILL_FORM_ACTION, params)
+        return {"outcome": outcome, **report, **result, "note": "Nothing is saved until the user submits the form."}
     if client_tools and name in client_tools and request_action_result is not None:
         outcome, result = await request_action_result(client_tools[name], arguments)
         return {"outcome": outcome, **result}

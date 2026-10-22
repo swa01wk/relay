@@ -44,6 +44,8 @@ from relay_runtime.ui_surfaces import (
     FORM_SUBMIT_EVENT,
     format_form_submission,
     sanitize_client_actions,
+    MAX_OPEN_FORMS,
+    open_forms_from_present_ui,
 )
 from relay_runtime.speak_text import SpeechTextStream, plain_text_for_speech
 from relay_runtime.voice_output import VoiceOutputConfig, play_tts_stream, queue_to_text_iterator
@@ -248,6 +250,7 @@ class SessionManager:
     async def _publish(self, session: SessionRecord, event: RelayEvent) -> None:
         if event.type == EventType.ACTION_REQUESTED and event.payload.get("action") == PRESENT_UI_ACTION:
             self._remember_form_bindings(session, event.payload.get("params") or {})
+            self._remember_open_forms(session, event.payload.get("params") or {})
         await self.event_gateway.publish(event)
 
     @staticmethod
@@ -259,6 +262,18 @@ class SessionManager:
                     "tool": str(surface["submit_tool"]),
                     "title": str(surface.get("title") or ""),
                 }
+
+    @staticmethod
+    def _remember_open_forms(session: SessionRecord, params: dict[str, Any]) -> None:
+        """Track the forms on screen so values the user gives in chat can be filled into them."""
+        forms = session.context.open_forms
+        if params.get("replace", True):
+            forms.clear()
+        for form in open_forms_from_present_ui(params):
+            forms.pop(form["id"], None)
+            forms[form["id"]] = form
+        while len(forms) > MAX_OPEN_FORMS:
+            forms.pop(next(iter(forms)))
 
     async def _save_bound_form(
         self, session: SessionRecord, form_id: str, binding: dict[str, str], payload: dict[str, Any]
@@ -296,6 +311,8 @@ class SessionManager:
         )
         if not await self._execute_hitl_commit(session, record.approval_id):
             session.form_bindings[form_id] = binding  # failed: the user may fix the form and retry
+        else:
+            session.context.open_forms.pop(form_id, None)
 
     async def _run_session_actor(self, session: SessionRecord) -> None:
         while True:
@@ -740,6 +757,7 @@ class SessionManager:
             if binding is not None:
                 await self._save_bound_form(session, form_id, binding, payload)
                 return
+            session.context.open_forms.pop(form_id, None)
             text = format_form_submission(payload)
             if text:
                 await self._process_user_text(session, text)

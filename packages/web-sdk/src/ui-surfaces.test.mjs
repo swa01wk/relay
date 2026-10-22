@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   normalizePresentUiParams,
+  registerFormFill,
   registerPlaygroundSurfaces,
   submitForm,
   surfaceToCsv,
@@ -157,4 +158,23 @@ test("tool-bound form keeps submitTool", () => {
     surfaces: [{ kind: "form", id: "log_activity-1", submit_tool: "log_activity", fields: [{ name: "subject", type: "text" }] }],
   });
   assert.equal(surfaces[0].submitTool, "log_activity");
+});
+
+test("registerFormFill hands the app the form id and values, and reports what was filled", async () => {
+  const handlers = new Map();
+  const session = { registerAction: (name, handler) => (handlers.set(name, handler), () => handlers.delete(name)) };
+  const fills = [];
+  const off = registerFormFill(session, (fill) => {
+    if (fill.formId !== "report") throw new Error("form not open");
+    fills.push(fill);
+  });
+  const result = await handlers.get("FILL_FORM")(
+    { form_id: "report", values: { summary: "Crash", people: 3, urgent: true, junk: { nested: 1 } } },
+    { actionId: "a1", name: "FILL_FORM" },
+  );
+  assert.deepEqual(fills, [{ formId: "report", values: { summary: "Crash", people: 3, urgent: true } }]);
+  assert.deepEqual(result, { form_id: "report", filled: ["summary", "people", "urgent"] });
+  await assert.rejects(handlers.get("FILL_FORM")({ form_id: "gone", values: { a: "b" } }, { actionId: "a2", name: "FILL_FORM" }), /form not open/);
+  off();
+  assert.equal(handlers.size, 0);
 });

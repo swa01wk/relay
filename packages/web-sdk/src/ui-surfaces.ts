@@ -4,6 +4,8 @@ export const PRESENT_UI_ACTION = "PRESENT_UI";
 export const SHOW_TABLE_ACTION = "SHOW_TABLE";
 /** APP_EVENT name the runtime turns into the next user turn. */
 export const FORM_SUBMIT_EVENT = "ui.form_submit";
+/** Action the agent sends to put values the user gave in chat into a form already on screen. */
+export const FILL_FORM_ACTION = "FILL_FORM";
 
 export type UiTableColumn = { key: string; label: string };
 
@@ -480,6 +482,43 @@ export function submitForm(
   values: Record<string, string | number | boolean | null>,
 ): void {
   session.sendEvent(FORM_SUBMIT_EVENT, { form_id: form.id, title: form.title, values });
+}
+
+/** Values for some fields of a form on screen, already checked against the form's fields. */
+export type UiFormFill = {
+  formId: string;
+  values: Record<string, string | number | boolean>;
+};
+
+type FormFillSession = {
+  registerAction: (
+    name: string,
+    handler: (
+      params: Record<string, unknown>,
+      ctx: { actionId: string; name: string },
+    ) => void | Record<string, unknown> | Promise<void | Record<string, unknown>>,
+  ) => () => void;
+};
+
+/**
+ * Fill a form on screen with values the user gave in the chat. Merge `fill.values` into that
+ * form's current values (leave other fields alone) and keep the user's chance to review: never
+ * submit from here. Throw if the form is no longer open, so the assistant can show it again.
+ */
+export function registerFormFill(
+  session: FormFillSession,
+  onFill: (fill: UiFormFill, ctx: { actionId: string; name: string }) => void | Promise<void>,
+): () => void {
+  return session.registerAction(FILL_FORM_ACTION, async (params, ctx) => {
+    const raw = asRecord(params.values);
+    const values: UiFormFill["values"] = {};
+    for (const [name, value] of Object.entries(raw)) {
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") values[name] = value;
+    }
+    const formId = String(params.form_id ?? params.formId ?? "");
+    await onFill({ formId, values }, ctx);
+    return { form_id: formId, filled: Object.keys(values) };
+  });
 }
 
 function csvCell(value: unknown): string {

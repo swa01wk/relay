@@ -10,21 +10,73 @@ The examples below use an `orders` domain; replace it with yours.
 
 ## 0. Decide the full tool catalog first (before writing code)
 
-The assistant can only answer what some tool answers. A thin catalog (`list_x`, `get_x`) gives an assistant that says "I can't do that" to most real questions. **You** decide the catalog: derive it from the app's code. Do not ask the developer to list the tools, and do not stop at the two or three tools the request happened to mention. Cover every entity and every question a user of this app could reasonably ask.
+The assistant can only answer what some tool answers, and can only *do* what some write tool does. A thin catalog (`list_x`, `get_x`) gives an assistant that says "I can't do that" to most real requests. **You** decide the catalog, from the app's code: do not ask the developer to list the tools, and do not stop at the tools the request happened to mention.
 
-### Step 1: Inventory the app
+**The rule: everything a user can see or do in the app, the assistant can see or do through a tool.** Every API endpoint, server action, mutation and form becomes a tool unless it is on the exclusion list in Step 2. Writes count as much as reads: a catalog of 15 read tools and 3 write tools for an app with 20 forms is incomplete.
 
-Read the data layer and the screens, not just the file you were pointed at:
+### Step 1: Scan the whole repository and write the API inventory
 
-- **Entities:** every table, ORM model, collection or API resource the app's users see. Skip internal ones such as sessions, migrations and job queues.
-- **Fields per entity:** identifiers, status/enum fields (with their values), dates, amounts, owners/assignees, free-text fields.
-- **Relationships:** which entity belongs to which (an order has a customer and line items).
-- **What users do today:** every list page, filter, sort, search box, dashboard number, chart, export, detail page, form and button in the app. Each is a question or an action the assistant must be able to do too.
-- **Who may see what:** per-user, per-team or per-account data (it decides the `X-Relay-User` filter in §3).
+Scan the entire repository once — backend, frontend and any shared packages — not just the files you were pointed at. Search for every way the app reads or changes data (use the patterns for the app's stack; `rg` is ripgrep, use `grep -rn` if it is missing):
 
-### Step 2: Generate the common tools for **every** entity
+```bash
+# HTTP routes and handlers
+rg -n "app\.(get|post|put|patch|delete)\(|router\.(get|post|put|patch|delete)\(" --glob '!node_modules'   # Express / Fastify / Koa
+rg -n "@(Get|Post|Put|Patch|Delete)\(|@(Get|Post|Put|Patch|Delete)Mapping|@RequestMapping"                  # NestJS / Spring
+rg -n "export (async )?function (GET|POST|PUT|PATCH|DELETE)" --glob '**/route.{ts,js}'                      # Next.js route handlers
+rg -ln "" --glob '**/pages/api/**'                                                                          # Next.js pages API
+rg -n "@(app|router)\.(get|post|put|patch|delete)\(|@(api_view|action)\b|path\(|re_path\(" --type py        # FastAPI / Flask / Django
+rg -n "^\s*(get|post|put|patch|delete|resources?) " --glob '**/routes.rb'                                   # Rails
+rg -n "HandleFunc|\.(GET|POST|PUT|PATCH|DELETE)\(" --type go                                                # Go
+# Server actions, RPC and GraphQL
+rg -n "[\"']use server[\"']" --glob '!node_modules'                                                         # Next.js server actions
+rg -n "\.(query|mutation)\(" --glob '**/*router*'                                                           # tRPC
+rg -n "type (Query|Mutation)\b|@(Query|Mutation|Resolver)\(" --glob '!node_modules'                         # GraphQL
+rg -ln "openapi|swagger" --glob '*.{json,yaml,yml}' --glob '!node_modules'                                  # an API spec lists everything at once
+# Writes in the data layer and forms in the UI
+rg -n "\.(create|createMany|update|updateMany|upsert|delete|deleteMany|insert|save|destroy)\(|INSERT INTO|UPDATE .* SET|DELETE FROM" --glob '!node_modules' --glob '!*.test.*'
+rg -n "<form|onSubmit|useForm\(|handleSubmit|z\.object\(|yup\.object\(|FormData" --glob '!node_modules'
+```
 
-Apply this matrix to each entity in the inventory. Leave a row out only when it makes no sense for that entity (say why in your summary).
+Then read each hit and write the inventory: **one row per endpoint, server action, mutation and form**, with
+
+| Field | Example |
+|---|---|
+| Where | `POST /api/orders` · `app/orders/new/page.tsx` form · `updateOrderStatus` server action |
+| What it does, in the user's words | "Create an order" |
+| Read or write | write |
+| Input fields | name, type, required, allowed values, limits, defaults — from the validation schema (zod, yup, pydantic, DTO, form `required`/`maxLength`), not guessed |
+| Who may call it | the ownership or role check it performs |
+| Tool | `create_order` (`side_effecting`) — or **excluded: reason** |
+
+Also note the entities (tables, models, collections) with their status/enum values, dates, amounts and owners, the relationships between them, and every screen's lists, filters, dashboard numbers and buttons — Steps 3 and 4 use them.
+
+Write the inventory to `relay-tools.md` next to the tools service (the developer can delete it later) and keep it updated as you build. It is how you and the developer check that nothing was skipped.
+
+### Step 2: Map every inventory row to a tool — writes first
+
+- **Every write row gets its own `side_effecting` tool**: create, update, delete/archive, every status change and button (`approve_invoice`, `assign_ticket`, `cancel_subscription`), every form, every bulk action. Do not fold several distinct writes into one generic `update_record`, and do not drop a write because "the user can do it in the UI".
+- **Every read row gets a `read_only` tool**, or is covered by a wider one (a `list_` with filters can cover several list endpoints).
+- **Call the app's existing code** — the same service function, validation and permission check the endpoint uses. Never re-implement business rules in the tools service or write to the database around them.
+- **Excluded, and listed with the reason in `relay-tools.md`:** sign-in, sign-up, password and two-factor flows; entering card or bank details; uploading or downloading binary files; webhooks and callbacks from other services; internal, admin-only and health endpoints. Nothing else is excluded without a reason the developer would agree with.
+
+### Write tools in depth: forms, validation and results
+
+Relay builds the assistant's forms from a write tool's `input_schema` (backend contract below), so the schema **is** the form. Make it match the app's own form field for field:
+
+- **Every field the app's form has**, with the app's label as `title` and its help text as `description` (shown as the placeholder). Up to 20 fields per form; split larger forms into steps (below).
+- **Field types:** `enum` with the real values for every select, radio group and status (a dropdown); `"type": "boolean"` for checkboxes and toggles; `"type": "number"` / `"integer"` with `minimum` for amounts and quantities; `"format": "date"` for dates; `"format": "email"` for emails; `"maxLength": 300` or more for notes and descriptions (a textarea).
+- **`required` exactly as the app's validation requires** — no more, no less. Defaults go in the `description` ("Defaults to today").
+- **Validate again in the tool** with the app's own validation (the same zod/pydantic/DTO schema the endpoint uses). The schema shapes the form and the model's arguments, but Relay does not enforce `enum`, `maxLength` or `format`.
+- **References to other records** (customer, assignee, project): a string id field whose `description` names the tool that finds it ("Customer id — find it with `search_customers`"), and make sure that lookup tool exists. For short fixed lists (fewer than ~50 team members, categories) use an `enum` of the values instead.
+- **Nested or repeated parts** (line items, attendees, addresses): forms have flat fields only, so add a separate tool per part (`add_order_line`, `remove_order_line`, `add_attendee`) instead of an array inside `create_order`.
+- **Multi-step forms and wizards:** one tool per step that saves on its own; otherwise one tool for the final submit with every field.
+- **Updates:** `update_<entity>` takes the id plus every editable field, all optional. Add a dedicated tool for each change users make often on its own (`set_order_status`, `assign_ticket`, `reschedule_meeting`) — it gives a small, focused form and a clearer approval message.
+- **Results:** return the saved record with its id (`{"order": {...}}`) so the assistant can confirm what changed and the app can refresh. On a validation or business failure return `200 {"error": "<what is wrong, in words the user understands>", "fields": {"<field>": "<problem>"}}` — Relay then reports the save as failed and the user can fix the form and resubmit.
+- **Descriptions say what changes**: "Creates an order for a customer and reserves stock. Use `add_order_line` afterwards to add products."
+
+### Step 3: Fill the gaps with the common tools for **every** entity
+
+After the 1:1 mapping, check each entity against this matrix and add what is missing. Leave a row out only when it makes no sense for that entity (say why in `relay-tools.md`).
 
 | Tool | Classification | Must support |
 |---|---|---|
@@ -32,12 +84,12 @@ Apply this matrix to each entity in the inventory. Leave a row out only when it 
 | `search_<entities>` | `read_only` | Free text `query` over the name/title/notes fields; returns the best matches with ids. Merge into `list_<entities>` as a `query` parameter if you prefer |
 | `get_<entity>` | `read_only` | One record by id **with its related records** (an order with its customer and line items), so one call answers "tell me about X" |
 | `aggregate_<entities>` | `read_only` | `metric` (enum: `count`, `sum_<amount>`, `avg_<amount>`, …), `group_by` (enum of status/owner/category fields, plus `day`/`week`/`month`/`quarter` for a date field), and the same filters as `list_<entities>`. Answers "how many…", "total…by…", "…per month" and feeds charts |
-| `create_<entity>` | `side_effecting` | Every field a user can set in the app's own create form, with `title`, `enum`, `format` and `required`, because the assistant's form is built from this schema |
-| `update_<entity>` | `side_effecting` | Id + every editable field (all optional except the id) |
-| `delete_<entity>` / `archive_<entity>` | `side_effecting` | Only if the app lets users do it |
-| `<verb>_<entity>` | `side_effecting` | One per state transition or button the app has (`ship_order`, `assign_ticket`, `approve_invoice`, `add_note_to_order`), including bulk versions if the app has bulk actions |
+| `create_<entity>` | `side_effecting` | As in "Write tools in depth" |
+| `update_<entity>` + `set_<entity>_<field>` | `side_effecting` | Id + every editable field (all optional); focused tools for frequent single changes |
+| `delete_<entity>` / `archive_<entity>` | `side_effecting` | Whenever the app lets users do it |
+| `<verb>_<entity>` | `side_effecting` | One per state transition or button the app has, including bulk versions if the app has bulk actions |
 
-### Step 3: Add the abstract, cross-entity tools
+### Step 4: Add the abstract, cross-entity tools
 
 These answer the open-ended questions users ask most and that per-entity tools answer badly. Add every one that has data behind it:
 
@@ -54,14 +106,15 @@ These answer the open-ended questions users ask most and that per-entity tools a
 | `describe_data` | "What statuses are there?" / "What can I filter by?": entities, their filterable fields and allowed enum values, so the model can build correct filters instead of guessing |
 | Domain calculations | Anything the app computes that is not stored: forecasts, totals with tax, conversion rates, durations, scores. Expose each as a tool rather than letting the model do the arithmetic |
 
-### Step 4: Check coverage, then build
+### Step 5: Check coverage, then build
 
-1. Write down at least 25 questions and requests a real user of this app would make. Mix lookups, counts, trends, comparisons, "what should I do", vague ones ("anything unusual?") and changes ("mark it as shipped"). Read them off the app's screens.
-2. For each one, name the tool calls that answer it. The model runs at most 4 rounds of (parallel) calls per message. A question that needs more rounds, or that no tool answers, means a tool is missing or too narrow: add or widen one.
-3. Merge near-duplicates into parameters (one `list_orders` with filters, not `list_open_orders` + `list_shipped_orders`). Complete coverage matters more than a short list, but every tool needs a distinct description; if two descriptions read alike, merge the tools.
-4. List the final catalog in your summary to the developer (tool, classification, the question it answers), plus the coverage questions it was checked against.
+1. **Inventory coverage:** every row in `relay-tools.md` names a tool or an exclusion reason. Count them: if the app has more write endpoints, server actions and forms than you have `side_effecting` tools, find out which ones are missing before writing code.
+2. **Form check:** for every form in the app, the matching tool's schema has the same fields, required flags, choices and limits.
+3. **Question check:** write down at least 25 requests a real user would make — at least a third of them changes ("create…", "mark … as …", "assign … to …", "reschedule…", "cancel…") and the rest lookups, counts, trends, comparisons and vague ones ("anything unusual?"). For each, name the tool calls that answer it. The model runs at most 4 rounds of (parallel) calls per message; a request that needs more, or that no tool handles, means a tool is missing or too narrow.
+4. Merge near-duplicate *read* tools into parameters (one `list_orders` with filters, not `list_open_orders` + `list_shipped_orders`). Never merge distinct writes. Every tool needs a distinct description; if two read alike, merge or rewrite them.
+5. In your summary to the developer, give the counts (endpoints/actions/forms found → read tools, write tools, excluded) and point to `relay-tools.md`.
 
-Never add a tool that takes raw SQL, a query language, a file path or a URL from the model, and never one that skips the user filter. Every abstract tool applies the same per-user filtering as the per-entity ones (§3).
+Never add a tool that takes raw SQL, a query language, a file path or a URL from the model, and never one that skips the user filter or the app's own permission checks. Every tool applies the same per-user filtering (§3).
 
 ## 1. Tools service (any language)
 
@@ -76,7 +129,7 @@ Never add a tool that takes raw SQL, a query language, a file path or a URL from
 `GET /tools` entry fields:
 - `name` — e.g. `list_orders` (letters, digits, `_`).
 - `description` — what the LLM reads to decide when to call the tool. Say what it returns and which filters exist.
-- `input_schema` — JSON Schema, `{"type": "object", "properties": {...}, "required": [...]}`. Supported keywords: `type` (object/string/integer/number/boolean/array), `properties`, `required`, `items`, `enum`, `minLength`, `minimum`, `description`.
+- `input_schema` — JSON Schema, `{"type": "object", "properties": {...}, "required": [...]}`. Keywords used: `type` (object/string/integer/number/boolean/array), `properties`, `required`, `items`, `enum`, `minLength`, `minimum`, `description`, and for forms `title`, `format` (`date`, `email`) and `maxLength`. Relay rejects arguments with a wrong type, a missing required field, a too-short string or a number below `minimum` before calling you; everything else (`enum`, `maxLength`, `format`, business rules) your tools service must check itself.
 - `classification` — `read_only` (default), `draft`, or `side_effecting`. Write tools also get **forms for free**: the agent can show a form bound to a write tool and Relay builds the fields from its schema — `title` → label, `enum` → dropdown, `format: date` / `email` → date / email input, `type: number|integer` → number, `boolean` → checkbox, `maxLength ≥ 300` → textarea, `required` → required field — and saves the submission through the tool. `read_only` tools run when the model calls them. `side_effecting` tools (create/update/delete) are offered to the model as **proposals**: calling one opens an approval dialog in the app, and Relay runs the tool only after the user approves, then lets the assistant confirm the result. Unknown values are treated as `side_effecting`. `draft` tools are not offered to the model.
 
 Design rules:
@@ -251,7 +304,7 @@ def relay_user(headers) -> dict | None:   # only after relay_call_is_valid(...) 
 
 ## 4. Verify (do all of these)
 
-- [ ] The catalog covers every entity with the §0 matrix plus the abstract tools, and every coverage question maps to at most 4 rounds of calls.
+- [ ] `relay-tools.md` maps every endpoint, server action, mutation and form found in the repository to a tool or an exclusion reason; every app form has a write tool with the same fields; every coverage question maps to at most 4 rounds of calls.
 - [ ] `curl https://<tools-host>/tools` lists every tool with a schema and classification (send a valid signature once verification is on).
 - [ ] `curl -X POST https://<tools-host>/tools/<name> -H 'content-type: application/json' -d '{}'` returns the expected object; a missing required argument returns `400`.
 - [ ] `relay agents push <agent>.yaml` prints `Agent <agent_id> is live (<n> tools …)` with the right count, and `relay agents list` shows it.
@@ -284,6 +337,8 @@ relay usage --json              # the same as JSON, for your own dashboards or a
 | `relay agents push`: `tools_url must use https` / `resolves to a private address` | Deploy the tools service on a public `https` address; `localhost` and private networks are refused |
 | Model never calls a tool / asks the user for data | Vague `description`, or no tool answers that question |
 | "I can't do that" for counts, trends, "what needs attention" or comparisons | Catalog too thin: add the `aggregate_`, `get_timeseries`, `list_attention_items` and `compare_` tools from §0 |
+| The assistant can look things up but cannot create, change or cancel anything | Write tools missing: redo the §0 repository scan and give every endpoint, server action and form its own `side_effecting` tool |
+| The assistant's form is missing fields, has free text where the app has a dropdown, or saves invalid data | The write tool's schema doesn't mirror the app's form: add every field with `title`, `enum`, `format`, `maxLength` and the app's `required` rules (§0, "Write tools in depth") |
 | A write tool runs without asking | Impossible by design — check it is published as `side_effecting`, not `read_only` |
 | A write tool never saves | The app must handle approvals (`onApprovalRequested` → `grantApproval`) — see the frontend guide §5 |
 | `400` from the tools API | Argument names in the schema don't match the function's parameters |
