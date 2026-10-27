@@ -32,6 +32,7 @@ FORM = {
         {"name": "due", "type": "date"},
         {"name": "people", "type": "number"},
         {"name": "urgent", "type": "checkbox"},
+        {"name": "details", "type": "textarea"},
     ],
 }
 
@@ -140,3 +141,11 @@ def test_fill_values_are_checked_against_the_form():
         None, {"error": "form_not_on_screen", "open_forms": ["report"]})
     params, report = sanitize_form_fill({"form_id": "report", "values": {"color": "red"}}, forms)
     assert params is None and report["error"] == "nothing_to_fill"
+
+
+def test_long_drafts_fit_in_textareas_but_short_fields_stay_short():
+    forms = open_forms_from_present_ui({"surfaces": [FORM]})
+    draft = "word " * 1200  # a full draft, ~6,000 characters
+    params, _ = sanitize_form_fill({"form_id": "report", "values": {"details": draft, "summary": draft}}, forms)
+    assert len(params["values"]["details"]) == 5000
+    assert len(params["values"]["summary"]) == 500

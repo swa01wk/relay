@@ -193,6 +193,7 @@ export function RelayProvider({ children }: { children: React.ReactNode }) {
     session.on("agent_activity", (e: RelayEventEnvelope) => setAgentSpeaking(Boolean(e.payload.speaking)))
     session.on("APPROVAL_REQUESTED", (e: RelayEventEnvelope) => {
       const p = e.payload
+      setPanelOpen(true) // approvals are answered in the assistant panel
       setApprovals((prev) => [
         ...prev.filter((a) => a.approvalId !== p.approval_id),
         {

@@ -1,7 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
 import { DealsTable } from "@/components/deals-table"
-import { ApprovalDialog } from "@/components/relay/approval-dialog"
 import { AssistantPanel } from "@/components/relay/assistant-panel"
 import { RelayInsights } from "@/components/relay/relay-insights"
 import { RelayProvider } from "@/components/relay/relay-provider"
@@ -60,7 +59,6 @@ export default async function Page() {
           </div>
         </SidebarInset>
         <AssistantPanel />
-        <ApprovalDialog />
       </SidebarProvider>
     </RelayProvider>
   )

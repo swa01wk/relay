@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
+import { ApprovalCards } from "@/components/relay/approval-cards"
 import { useRelay } from "@/components/relay/relay-provider"
 import { cn } from "@/lib/utils"
 
@@ -44,7 +45,7 @@ export function AssistantPanel() {
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" })
-  }, [relay.messages, relay.liveTranscript, relay.busy])
+  }, [relay.messages, relay.liveTranscript, relay.busy, relay.approvals])
 
   if (!relay.panelOpen) return null
   const ready = relay.connection === "ready"
@@ -115,6 +116,7 @@ export function AssistantPanel() {
               {message.text}
             </div>
           ))}
+          <ApprovalCards />
           {relay.liveTranscript && (
             <div className="max-w-[85%] self-end rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
               {relay.liveTranscript}

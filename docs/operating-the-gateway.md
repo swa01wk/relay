@@ -47,6 +47,9 @@ Set in `infra/docker/.env` (or the gateway container's environment). The gateway
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint |
 | `RELAY_MODEL_PRICES` | — | JSON, USD per 1M tokens by model id (`"*"` = fallback): `{"<model>": {"input": …, "output": …, "cached_input": …}}`. Enables `cost_usd` on usage metrics; without it only tokens are reported |
 | `RELAY_OPENAI_STREAM_USAGE` | `1` | `0` stops asking the API for token usage (for OpenAI-compatible servers that reject `stream_options`) |
+| `RELAY_OPENAI_REASONING_EFFORT` | — (model default) | `none`/`minimal`/`low`/`medium`/`high` for reasoning models; lower answers faster (voice). Leave unset for models that reject `reasoning_effort` |
+| `RELAY_OPENAI_HEDGE_AFTER_SECS` | — (off) | When a model request has not sent its first chunk after this many seconds, send the same request again and use whichever answers first. Cuts tail latency; the duplicate is billed only for slow requests. `3` suits voice |
+| `RELAY_END_TURN_AFTER_DISPLAY` | — (off) | `1` ends a turn after `present_ui` / `fill_form` / screen actions that worked when the model already wrote its reply next to them, saving one model call per display turn |
 | **Agents and tools** | | |
 | `RELAY_AGENTS_DIR` | `agents` (`/app/agents` in Docker) | Folder of agent manifests (`*.yaml`) |
 | `RELAY_<NAME>_TOOLS_URL` | — | Tools service URLs referenced by manifests as `${VAR}` (e.g. `RELAY_CRM_TOOLS_URL`) |
@@ -123,7 +126,7 @@ Everything below is derived from the event stream; nothing needs instrumenting i
 
 **Session inspector and audit trail**. Set `RELAY_ADMIN_TOKEN` and open `http://<gateway>/admin`: recent sessions, each conversation turn by turn (what was asked, what was answered, which tools ran, failures), tokens and cost, and every approval or form save with its result. The same data is available as JSON (`/admin/sessions`, `/admin/sessions/{id}`, `/admin/audit`). Both read the event log, so with Postgres they cover past sessions too. Relay has no end-user identity yet: audit entries identify the session, not a person.
 
-**Filling forms from the chat**. The runtime remembers the forms an agent showed (per session, at most 10, cleared by a replacing `present_ui` and by submission) and, while one is open, offers the model a built-in `fill_form` tool. Values are checked against the form's fields before a `FILL_FORM` action goes to the app; nothing is saved by it, so it needs no approval. It appears as `FILL_FORM` in `relay_ui_actions_total`.
+**Filling forms from the chat**. The runtime remembers the forms an agent showed (per session, at most 10, cleared by a replacing `present_ui` and by submission) and, while one is open, offers the model a built-in `fill_form` tool. Values are checked against the form's fields before a `FILL_FORM` action goes to the app (text fields up to 500 characters, textareas up to 5,000; submitted form values are capped at 5,000 each); nothing is saved by it, so it needs no approval. It appears as `FILL_FORM` in `relay_ui_actions_total`.
 
 **What developers see of their own project**. Account tokens read their project's sessions, one session's turns/errors/approvals/usage, and a usage report (`GET /v1/projects/{id}/sessions`, `/sessions/{session_id}`, `/usage`; CLI `relay logs`, `relay usage`). They read the same event log as the inspector, filtered by the events' `project_id` (indexed on Postgres), so redaction (`RELAY_EVENT_STORE_REDACT`) and retention apply to them too, and `cost_usd` appears only with `RELAY_MODEL_PRICES`. The usage report counts at most 20,000 events per request and says `truncated` beyond that. Dev sessions (`RELAY_DEV_SESSIONS=1`) take their `project_id` from the client, so on a dev gateway they can show up in any project's activity.
 
@@ -133,7 +136,8 @@ Everything below is derived from the event stream; nothing needs instrumenting i
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.observability.yml up -d
-# Prometheus http://localhost:9090 · Grafana http://localhost:3003 (Relay → Relay overview)
+# Prometheus http://localhost:9091 · Grafana http://localhost:3013 (Relay → Relay overview)
+# Other host ports: RELAY_PROMETHEUS_PORT / RELAY_GRAFANA_PORT in infra/docker/.env
 ```
 
 **Per-session view (dev)**: `GET /dev/sessions/{id}/timeline?token=` (ordered events, metrics, spans, `usage` totals) with the session's own token. `SESSION_STARTED` carries the session's `agent_id`.

@@ -200,11 +200,11 @@ def test_format_form_submission_truncates_and_ignores_empty():
 
     assert format_form_submission({"form_id": "f", "values": {}}) is None
     text = format_form_submission(
-        {"form_id": "contact", "title": "Contact", "values": {"note": "x" * 900, "ok": True}}
+        {"form_id": "contact", "title": "Contact", "values": {"note": "x" * 9000, "ok": True}}
     )
     assert text.startswith(f"{FORM_SUBMISSION_PREFIX} Contact: ")
     values = json.loads(text.split(": ", 1)[1])
-    assert len(values["note"]) == 500 and values["ok"] is True
+    assert len(values["note"]) == 5000 and values["ok"] is True
 
 
 class EchoModel(ModelProvider):

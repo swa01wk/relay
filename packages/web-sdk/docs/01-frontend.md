@@ -241,7 +241,7 @@ Helpers:
 - `surfaceToCsv(surface, rows?)` → CSV string for `table`, `chart`, `comparison`, `kv` (pass the filtered/sorted rows for tables). Download it with a `Blob` + `<a download>`.
 - Form values: `number` fields → `Number(value)` or `null`; `checkbox` → boolean.
 - **Saving forms (`submitTool`).** The agent can bind a form to a backend write tool; Relay builds its fields from the tool's schema and saves the submission through that tool (the binding lives on the server, so the browser cannot change which tool runs). Show progress per form: set "Saving…" on submit, then listen for `COMMIT_VERIFIED` (`payload.form_id` → "Saved") and `ERROR` with `payload.message === "commit_failed"` (`payload.form_id`, `payload.error` → show it and re-enable the form so the user can fix and resubmit). Refresh any on-screen data after `COMMIT_VERIFIED`. The assistant then confirms in chat; the runtime's follow-up message text starts with `[Action approved|rejected|failed]` — show it as a short status note, not a user bubble.
-- **Filling forms from the chat (required).** While a form is on screen, users often type or say the values instead ("the title is Login broken, severity high, due next Friday"). The assistant then sends a `FILL_FORM` action with only those fields, already checked against the form (choices matched to the options, numbers and yes/no converted, dates as `YYYY-MM-DD`, unknown fields dropped). Handle it with `registerFormFill` and **merge** the values into that form's current values — keep what the user already typed in other fields, never submit, and briefly highlight the fields that changed. The user still reviews and presses the form's button; for a form with `submitTool` that is still the approval that saves it. If the form is no longer open, throw: the assistant is told and shows the form again with the values prefilled.
+- **Filling forms from the chat (required).** While a form is on screen, users often type or say the values instead ("the title is Login broken, severity high, due next Friday"). The assistant then sends a `FILL_FORM` action with only those fields, already checked against the form (choices matched to the options, numbers and yes/no converted, dates as `YYYY-MM-DD`, unknown fields dropped; up to 5,000 characters for a textarea, so a full draft the user asked the assistant to write arrives complete). Handle it with `registerFormFill` and **merge** the values into that form's current values — keep what the user already typed in other fields, never submit, and briefly highlight the fields that changed. The user still reviews and presses the form's button; for a form with `submitTool` that is still the approval that saves it. If the form is no longer open, throw: the assistant is told and shows the form again with the values prefilled.
 
   ```tsx
   import { registerFormFill } from "@sumukhj1219-wkt-org/relay-web-sdk"
@@ -320,11 +320,14 @@ session.onStateConflict(({ expectedVersion, actualVersion }) => showBanner())
 
 The SDK acknowledges every action automatically (`ACTION_APPLIED`, or `ACTION_FAILED` if the handler throws or no handler is registered).
 
-Approvals (when the backend has side-effecting tools):
+Approvals (when the backend has side-effecting tools): show each request as a card **in the assistant panel**, below the assistant's message, with the `summary` and two buttons, **Approve** and **Reject**. The assistant tells users to "approve it in the assistant panel", so don't use a modal, toast or a separate page for it. If the assistant panel is closed when a request arrives, open it. After a click, disable both buttons and show "Approved" / "Rejected" on the card; the assistant then confirms in chat.
 
 ```ts
-session.onApprovalRequested((e) => openDialog(e.payload))          // payload.approval_id, summary, tool_name
-session.grantApproval(approvalId)   // or session.rejectApproval(approvalId)
+session.onApprovalRequested((e) => addApprovalCard(e.payload))     // payload.approval_id, summary, tool_name, arguments
+// Approve button:
+session.grantApproval(approvalId)
+// Reject button:
+session.rejectApproval(approvalId)
 ```
 
 ## 6. Verify (do all of these)
@@ -335,6 +338,7 @@ session.grantApproval(approvalId)   // or session.rejectApproval(approvalId)
 - [ ] The surface appears in the page without covering the existing screen, and stays after the assistant panel is closed; its close button removes only that surface.
 - [ ] **Hide** collapses the canvas to a one-line bar and the page content moves up; **Show results** brings the same surfaces back; minimize collapses one surface; **Clear** removes the canvas entirely; a half-filled form keeps its values after hide/show.
 - [ ] With the canvas hidden, asking for new data shows the canvas again with the new surfaces.
+- [ ] Ask for a change that needs approval (e.g. "mark order 42 as shipped"): an approval card with **Approve** and **Reject** appears in the assistant panel; approving it shows the assistant's confirmation.
 - [ ] With a form on screen, type two of its values in the chat ("set the title to X and priority to high"): those fields change in the form, other fields keep what you typed, nothing is submitted, and the assistant asks you to review and submit.
 - [ ] Stop the gateway and send a message: an error is shown, nothing spins forever.
 - [ ] Voice: click to start, speak, see the live transcript and hear the reply; mute works.
@@ -354,6 +358,7 @@ session.grantApproval(approvalId)   // or session.rejectApproval(approvalId)
 | Generated UI opens as an overlay over the app, and disappears when it is closed | The canvas was put in a modal or inside the assistant panel. Make it a section of the page (Layout section), keep surfaces in state above the panel, and give each surface its own close button |
 | "not connected" / connect fails although the gateway is healthy | Something called `sendState`/`sendText` before the WebSocket opened (e.g. from a `SESSION_READY` handler) — send after `connect()` resolves |
 | Results can't be hidden, or keep covering the page | The canvas has no Hide / minimize / Clear controls, or is an overlay. Add the controls from "Hide and show the canvas" and keep the canvas in the page flow |
+| The assistant says "approve it in the assistant panel" but users can't find it | Approval requests were shown as a modal, toast or nowhere. Render them as a card with Approve / Reject in the assistant panel (§5, "Approvals") |
 | Values given in the chat never appear in the form | No `registerFormFill` handler (the action fails and the assistant redraws the form), or the inputs are uncontrolled. Register it before `connect()` and render inputs from the form's values in state |
 | A chat fill wipes what the user already typed | The handler replaced the form's values instead of merging (`{ ...current, ...values }`) |
 | Form values are lost after hiding the results | The canvas was unmounted on hide. Hide it with the `hidden` attribute or CSS instead |

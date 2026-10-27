@@ -34,6 +34,8 @@ _CLIENT_ACTION_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,59}$")
 FORM_SUBMIT_EVENT = "ui.form_submit"
 FORM_SUBMISSION_PREFIX = "[Form submitted]"
 _MAX_FORM_VALUE_CHARS = 500
+# Textareas hold drafts and descriptions; a full draft must survive filling and submitting.
+MAX_LONG_TEXT_CHARS = 5000
 
 # Values the user gives in chat go into a form that is already on screen (never saved by this).
 FILL_FORM_ACTION = "FILL_FORM"
@@ -238,7 +240,7 @@ def format_form_submission(payload: dict[str, Any]) -> str | None:
         if isinstance(value, (bool, int, float)) or value is None:
             clean[str(key)] = value
         else:
-            clean[str(key)] = str(value)[:_MAX_FORM_VALUE_CHARS]
+            clean[str(key)] = str(value)[:MAX_LONG_TEXT_CHARS]
     title = str(payload.get("title") or payload.get("form_id") or "form")[:120]
     return f"{FORM_SUBMISSION_PREFIX} {title}: {json.dumps(clean, ensure_ascii=False)}"
 
@@ -389,7 +391,10 @@ def fill_form_instructions(open_forms: list[dict[str, Any]]) -> str:
         "gave, instead of showing the form again. Use dates as YYYY-MM-DD and one of the listed "
         "options for choice fields. Never guess values the user did not give. Filling does not "
         "save anything: afterwards say in one sentence what you filled in and ask the user to "
-        "check it and press the form's submit button; mention fields you could not fill."
+        "check it and press the form's submit button; mention fields you could not fill. When "
+        "the user asks you to write or rewrite a text field, write the complete text and fill it "
+        "(textareas take up to 5,000 characters). If the user says a field is empty or wrong, "
+        "write it; never show the same form again empty."
     )
 
 
@@ -414,7 +419,8 @@ def _coerce_form_value(field: dict[str, Any], value: Any) -> tuple[Any, str | No
         except ValueError:
             return None, "expected a number"
         return (int(number) if number.is_integer() else number), None
-    text = str(value).strip()[:_MAX_FORM_VALUE_CHARS]
+    limit = MAX_LONG_TEXT_CHARS if kind == "textarea" else _MAX_FORM_VALUE_CHARS
+    text = str(value).strip()[:limit]
     if not text:
         return None, "empty"
     if kind == "select":

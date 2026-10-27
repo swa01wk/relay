@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections.abc import AsyncIterator, Callable, Sequence
 from typing import Any
 
@@ -58,7 +59,10 @@ def canvas_instructions() -> str:
         "context), then call present_ui. For a chart, pass numbers (not strings) in data and "
         "pick the chart_type that fits. Use comparison to put 2-4 entities side by side, "
         "markdown for a formatted explanation, and a form when you need several details from "
-        "the user (give it an id, and prefill any fields the user already gave you). "
+        "the user (give it an id, and prefill any fields the user already gave you). When the "
+        "user asks you to write, draft or rewrite something, write it yourself and prefill it in "
+        "the form's text fields; never show an empty text field the user expected you to write. "
+        "When editing an existing record, fetch it first and prefill its current values. "
         f"A message starting with {FORM_SUBMISSION_PREFIX!r} is the user's form submission. "
         "Submitting a form does not save anything: the values only reach you. Unless you call a "
         "tool that saves them, never say details were saved, updated or changed; confirm what "
@@ -74,10 +78,13 @@ def approval_instructions() -> str:
     """Rules for tools that change data (offered as proposals that need the user's approval)."""
     return (
         "Tools whose description starts with 'Requires the user's approval' change data. Calling "
-        "one does not change anything yet: it shows the user an approval dialog. Fill 'summary' "
-        "with one plain sentence of the exact change (e.g. 'Move DEAL-2042 from Proposal to "
-        "Negotiation'); look up current values first so the summary is accurate. Then tell the "
-        "user what will change and that they need to approve it — never say it is done. "
+        "one does not change anything yet: it shows the user an approval request with Approve "
+        "and Reject buttons in the assistant panel. Fill 'summary' with one plain sentence of "
+        "the exact change (e.g. 'Move ORD-2042 from Pending to Shipped'). Before proposing a "
+        "change to an existing record, fetch it and confirm it exists and allows that change; if "
+        "it doesn't, say so and offer to search — never propose a change to a record you haven't "
+        "found. Then tell the user what will change and to approve it in the assistant panel — "
+        "never say it is done. "
         f"A message starting with {ACTION_APPROVED_PREFIX!r} means the user approved and it was "
         "saved: confirm briefly using the result. "
         f"{ACTION_REJECTED_PREFIX!r} means they declined and nothing changed: acknowledge it. "
@@ -85,8 +92,11 @@ def approval_instructions() -> str:
         "When the user wants to create, log, add or edit something and you are missing details "
         "(or they ask for a form), call present_ui with a form whose submit_tool is that write "
         "tool's name: Relay builds the fields from the tool, you may list field names to choose "
-        "and order them and pass values to prefill what you know (e.g. the deal_id). Submitting "
-        "that form saves directly. When you already have every value, propose the tool instead."
+        "and order them and pass values to prefill what you know (an id, current values, and "
+        "any text the user asked you to write). Submitting that form saves directly. Propose the "
+        "tool directly only when you have every value and the user did not ask to choose or "
+        "edit them. If they ask for a form, want to pick values ('let me choose…', 'I'll set…') "
+        "or want to write or edit text, show the form."
     )
 
 
@@ -210,6 +220,10 @@ class ToolUsingAgent(AgentAdapter):
         self._allow_proposals = allow_proposals
         self.proposal_tools = proposal_tools_from_registry(registry) if allow_proposals else []
         self.proposal_tool_names = frozenset(t["function"]["name"] for t in self.proposal_tools)
+        # Voice latency: when the model already said its sentence next to display-only calls
+        # (present_ui, fill_form, screen actions) and they all worked, end the turn instead of
+        # asking the model again just for the reply.
+        self._end_after_display = os.environ.get("RELAY_END_TURN_AFTER_DISPLAY", "").lower() in ("1", "true", "yes")
 
     async def on_turn(self, session_id: str, *, context: dict[str, Any]) -> list[RelayEvent]:
         async for _token in self.stream_turn(session_id, context=context):
@@ -259,6 +273,12 @@ class ToolUsingAgent(AgentAdapter):
             if open_forms:
                 tools.append(fill_form_tool(open_forms))
                 canvas = f"{canvas} {fill_form_instructions(open_forms)}"
+            if self._end_after_display:
+                canvas = (
+                    f"{canvas} When you call present_ui, fill_form or a screen action, write your "
+                    "one-sentence reply in the same message as that call, unless you still need "
+                    "to look something up afterwards."
+                )
             if self._instructions:
                 canvas = f"{canvas} {self._instructions}"
             messages.append({"role": "system", "content": canvas})
@@ -334,6 +354,12 @@ class ToolUsingAgent(AgentAdapter):
                         "content": json.dumps(result, default=str)[:MAX_TOOL_RESULT_CHARS],
                     }
                 )
+            if (
+                self._end_after_display
+                and "".join(spoken).strip()
+                and all(_display_call_succeeded(call, result, client_tools) for call, result in zip(calls, results))
+            ):
+                return
 
 
 async def run_model_tool_call(
@@ -406,6 +432,18 @@ async def run_model_tool_call(
     if name not in allowed_tools:
         return {"error": f"tool_not_available:{name}"}
     return await run_tool(name, arguments)
+
+
+def _display_call_succeeded(call: dict[str, str], result: dict[str, Any], client_tools: dict[str, str]) -> bool:
+    """A call that only changed the screen and worked, so the model has nothing left to read."""
+    name = call.get("name", "")
+    if result.get("error"):
+        return False
+    if name == PRESENT_UI_TOOL_NAME:
+        return True
+    if name == FILL_FORM_TOOL_NAME or name in client_tools:
+        return result.get("outcome") == "applied" and not result.get("rejected")
+    return False
 
 
 def _screen_state(context: dict[str, Any]) -> dict[str, Any]:
