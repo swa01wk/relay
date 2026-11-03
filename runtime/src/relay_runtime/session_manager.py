@@ -1814,6 +1814,11 @@ class SessionManager:
             async with session.context_lock:
                 await self._process_client_app_event(session, name, dict(payload))
             return
+        if name == CLIENT_CAPABILITIES_EVENT:
+            # Not queued behind a running turn: after a screen action (e.g. opening another page)
+            # the app advertises that screen's actions, and the same turn's next round uses them.
+            session.context.client_actions = sanitize_client_actions(payload.get("actions"))
+            return
         done: asyncio.Future[None] = asyncio.get_running_loop().create_future()
         await session.queue.put(
             (_CommandType.CLIENT_APP_EVENT, _ClientAppEvent(name=name, payload=payload, done=done))

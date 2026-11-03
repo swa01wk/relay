@@ -123,3 +123,104 @@ def test_sanitize_client_actions_drops_bad_entries():
     ])
     assert [a["name"] for a in actions] == ["FILTER_DEALS_TABLE", "OPEN_DEAL"]
     assert actions[1]["parameters"] == {"type": "object", "properties": {}}
+
+
+NAVIGATE_ACTION = {
+    "name": "NAVIGATE",
+    "description": "Open a page of the app",
+    "parameters": {"type": "object", "properties": {"path": {"type": "string", "enum": ["/", "/invoices/new"]}}},
+}
+PAGE_FORM_ACTION = {
+    "name": "PAGE_FORM_NEW_INVOICE",
+    "description": "Fill the New invoice form on this page",
+    "parameters": {"type": "object", "properties": {"customer": {"type": "string"}, "amount": {"type": "number"}}},
+}
+
+
+class NavigateThenFillModel(ModelProvider):
+    """Opens the page, then fills the form that page advertises — in one user message."""
+
+    def __init__(self) -> None:
+        self.offered_per_round: list[list[str]] = []
+        self.system_texts: list[str] = []
+
+    async def stream_completion(self, session_id, *, messages, tools=None) -> AsyncIterator[dict[str, Any]]:
+        del session_id
+        offered = [t["function"]["name"] for t in tools or []]
+        self.offered_per_round.append(offered)
+        self.system_texts = [str(m["content"]) for m in messages if m.get("role") == "system"]
+        done = [m for m in messages if m.get("role") == "tool"]
+        if not done:
+            yield {"type": "tool_calls", "calls": [{"id": "c1", "name": "ui_NAVIGATE",
+                                                     "arguments": json.dumps({"path": "/invoices/new"})}]}
+        elif len(done) == 1 and "ui_PAGE_FORM_NEW_INVOICE" in offered:
+            yield {"type": "tool_calls", "calls": [{"id": "c2", "name": "ui_PAGE_FORM_NEW_INVOICE",
+                                                     "arguments": json.dumps({"customer": "Acme", "amount": 50000})}]}
+        else:
+            yield {"type": "token", "text": "Filled the invoice form — review it and submit."}
+
+    async def cancel(self, session_id: str) -> None:
+        del session_id
+
+
+@pytest.mark.asyncio
+async def test_agent_navigates_then_fills_the_new_pages_form_in_the_same_turn():
+    model = NavigateThenFillModel()
+    manager, events = _manager(model)
+    session, _ = await manager.create_dev_session(project_id="p", agent_id="a")
+    sid = session.session_id
+    try:
+        await manager.submit_client_app_event(sid, name="ui.capabilities", payload={"actions": [NAVIGATE_ACTION]})
+        turn = asyncio.create_task(manager.submit_user_text(sid, "open a new invoice for Acme, 50000"))
+        acked: list[str] = []
+        for _ in range(300):
+            await asyncio.sleep(0.01)
+            for event in events.all_events():
+                if event.type != EventType.ACTION_REQUESTED or event.payload["action_id"] in acked:
+                    continue
+                acked.append(event.payload["action_id"])
+                if event.payload["action"] == "NAVIGATE":
+                    # Like the SDK: the new page's actions are advertised before the navigation result.
+                    await manager.submit_client_app_event(
+                        sid, name="ui.capabilities", payload={"actions": [NAVIGATE_ACTION, PAGE_FORM_ACTION]}
+                    )
+                await manager.submit_client_action_result(
+                    sid, action_id=event.payload["action_id"], name=event.payload["action"],
+                    outcome="applied", result={"ok": True},
+                )
+            if turn.done():
+                break
+        await asyncio.wait_for(turn, 5)
+    finally:
+        await manager.end_session(sid)
+
+    requested = [e.payload for e in events.all_events() if e.type == EventType.ACTION_REQUESTED]
+    assert [r["action"] for r in requested] == ["NAVIGATE", "PAGE_FORM_NEW_INVOICE"]
+    assert requested[1]["params"] == {"customer": "Acme", "amount": 50000}
+    assert "ui_PAGE_FORM_NEW_INVOICE" not in model.offered_per_round[0]
+    assert "ui_PAGE_FORM_NEW_INVOICE" in model.offered_per_round[1]
+    assert any("ui_PAGE_FORM_" in text and "never submits" in text for text in model.system_texts)
+
+
+@pytest.mark.asyncio
+async def test_capabilities_update_while_a_turn_is_running():
+    """The update is applied at once, not queued behind the in-flight turn."""
+    model = FilterModel()
+    manager, events = _manager(model)
+    session, _ = await manager.create_dev_session(project_id="p", agent_id="a")
+    sid = session.session_id
+    try:
+        await manager.submit_client_app_event(sid, name="ui.capabilities", payload={"actions": [FILTER_ACTION]})
+        turn = asyncio.create_task(manager.submit_user_text(sid, "deals of at least 70k"))
+        for _ in range(100):  # the turn is now waiting for the browser's action result
+            await asyncio.sleep(0.01)
+            if any(e.type == EventType.ACTION_REQUESTED for e in events.all_events()):
+                break
+        await asyncio.wait_for(
+            manager.submit_client_app_event(sid, name="ui.capabilities", payload={"actions": [NAVIGATE_ACTION]}), 1
+        )
+        assert [a["name"] for a in manager._sessions[sid].context.client_actions] == ["NAVIGATE"]
+        await _ack_actions(manager, events, sid, {"rows_shown": 1})
+        await asyncio.wait_for(turn, 5)
+    finally:
+        await manager.end_session(sid)

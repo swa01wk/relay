@@ -140,6 +140,8 @@ In the `registerPlaygroundSurfaces` callback, update the provider's surfaces and
 ```ts
 import {
   createRelaySession,
+  registerAutoNavigation,
+  registerPageForms,
   registerPlaygroundSurfaces,
   submitForm,
   type RelayEventEnvelope,
@@ -158,6 +160,10 @@ const offSurfaces = registerPlaygroundSurfaces(session, ({ surfaces, replace }) 
   // replace=true: show only these; replace=false: append (same surface.id updates in place)
   render(surfaces, replace)
 })
+// "Go to invoices" works for every page the app links to (menus, sidebars, tabs) — no route list.
+const offNavigation = registerAutoNavigation(session, { navigate: (path) => router.push(path) })
+// "Fill the invoice form" fills the app's own forms on screen — never submits them.
+const offPageForms = registerPageForms(session)
 session.on("TURN_STARTED", () => setBusy(true))
 session.on("TURN_COMPLETED", () => setBusy(false))
 session.on("TRANSCRIPT_DELTA", (e: RelayEventEnvelope) => showLiveTranscript(String(e.payload.text ?? "")))
@@ -180,6 +186,8 @@ await session.disconnectVoice()
 
 // 4) Tear down (component unmount / page leave).
 offSurfaces()
+offNavigation()
+offPageForms()
 session.disconnect()
 ```
 
@@ -260,7 +268,7 @@ Helpers:
 
 Build one renderer component per surface kind from your own design system (e.g. shadcn Table, Card, Alert, a Recharts chart); the surface types in `src/ui-surfaces.ts` list every field.
 
-## 4. Let the assistant change the app's own screen (recommended)
+## 4. Let the assistant change the app's own screen (required)
 
 Give the agent actions over components that already exist (filter a table, open a record, switch a tab). With a `spec`, the SDK advertises the action to the agent, which then **prefers changing what is on screen over drawing a new surface** (e.g. "deals over $70K" filters the existing deals table instead of rendering a new table).
 
@@ -288,20 +296,51 @@ const off = session.registerAction(
 session.sendState({ orders_table: { visible: true, filters, rows_shown: 21, total: 80 } })
 ```
 
-**Expose every screen interaction, not one example.** Go through each page and component of the app and register an action for every interaction a user does with the mouse that the assistant should be able to do for them:
+**Expose every screen interaction, not one example.** First list every page of the app (put them under "Pages" in `relay-tools.md`):
+
+```bash
+rg --files --glob '!node_modules' | rg '(^|/)app/.*page\.(tsx|jsx|ts|js)$'                  # Next.js app router: one page per file
+rg --files --glob '!node_modules' | rg '(^|/)pages/' | rg -v '(^|/)pages/(api|_app|_document)'   # Next.js pages router
+rg -n "<Route\b|path:\s*['\"]/|createBrowserRouter|createFileRoute\(" --glob '!node_modules'    # React Router, TanStack Router, Vue Router, Angular
+rg -n "<Tabs\b|TabsTrigger|role=\"tab\"|<Sheet\b|<Drawer\b|<Dialog\b" --glob '!node_modules'      # tabs, drawers and dialogs inside pages
+```
+
+Navigation between them is automatic: `registerAutoNavigation` (in the §2 template) registers a `NAVIGATE` action over every in-app link on screen and keeps it current as menus change. It leaves out links to single records (`/orders/1042` — use `OPEN_<ENTITY>`), sign-out, downloads and new-tab links. Add the pages no link points to, and pass your router so navigation stays client-side:
+
+```ts
+const offNavigation = registerAutoNavigation(session, {
+  navigate: (path) => router.push(path),              // Next.js useRouter(), React Router useNavigate(), …
+  pages: [{ path: "/reports/annual", title: "Annual report" }],   // routes found above that no link points to
+  exclude: (path) => path.startsWith("/admin"),       // pages the assistant must never open
+})
+// On every route change, tell the assistant where the user is:
+session.sendState({ page: currentPageName, path: pathname })
+```
+
+Page forms are automatic too: `registerPageForms` (in the §2 template) offers every form on screen as a `PAGE_FORM_<NAME>` action whose parameters are the form's fields — labels, choices, limits and required flags, never what is typed in them. The assistant fills them the way typing would (React, Vue and form libraries see the change) and **never submits**: the user reviews and clicks the app's own button. "Open a new invoice for Acme, 50,000" opens the page and fills its form in one reply, because `NAVIGATE` reports back only after the new page's forms are advertised.
+
+- It skips forms with a password field (sign-in), forms with fewer than two fillable fields (search boxes, chat inputs), hidden forms, and fields that are hidden, read-only, file uploads or card/password/one-time-code fields.
+- Put `data-relay-ignore` on the assistant's own panel and canvas (their chat input and canvas forms are not page forms), and on any form or field the assistant must not fill.
+- `data-relay-form="New invoice"` on a `<form>` names it (otherwise its `aria-label`, legend or first heading) and keeps it even with one field.
+- Only native `<input>`, `<select>` and `<textarea>` are filled. For custom widgets (comboboxes, date pickers that are not inputs), register a `PREFILL_<FORM>` action for that form (table below).
+
+Without `navigate`, the SDK clicks the page's own link (Next.js `<Link>` and React Router `<Link>` handle that click client-side) or else loads the page, which ends the session. Do not also register your own `NAVIGATE`; the last registration wins.
+
+Then go through each page and component and register an action for every interaction a user does with the mouse that the assistant should be able to do for them:
 
 | Interaction in the app | Action to register |
 |---|---|
 | Filters, search boxes, date-range pickers on a list | `FILTER_<LIST>` with one parameter per filter, plus `reset` |
 | Sortable columns | `SORT_<LIST>` (`sort_by` enum of columns, `sort_order`), or a parameter of `FILTER_<LIST>` |
 | Detail pages / drawers | `OPEN_<ENTITY>` (`id`) that navigates or opens the drawer |
-| Navigation, tabs, sections | `NAVIGATE` (`page` enum of the app's routes) and `SWITCH_TAB` per tabbed view |
+| Navigation between pages | Automatic (`registerAutoNavigation`, above) |
+| Tabs and sections inside a page | `SWITCH_TAB` per tabbed view (tabs that are links are covered by navigation) |
 | Row selection, highlighting | `SELECT_<ENTITY>` / `HIGHLIGHT_<ENTITY>` (`ids`) |
 | Chart controls (period, grouping, metric) | `SET_<CHART>_OPTIONS` with the same choices the controls offer |
-| Pre-filling an existing form | `PREFILL_<FORM>` with the form's fields (the user still submits it) |
+| Filling an existing form | Automatic (`registerPageForms`, above); `PREFILL_<FORM>` only for forms built from custom widgets |
 | Exports, view toggles, pagination | One action each when the app has them |
 
-Report the matching state with `sendState` (current page, filters, sort, selected ids, open record), so follow-ups build on what the user sees. Data changes do not go here: they are backend `side_effecting` tools (backend guide §0), so they get an approval.
+Report the matching state with `sendState` (current page, filters, sort, selected ids, open record), so follow-ups build on what the user sees. Check coverage before finishing: every page found above is a link on screen or in `pages` (so `NAVIGATE` can open it), every detail view has an `OPEN_<ENTITY>`, every list with filters has a `FILTER_<LIST>` (the table in `AGENTS.md`, Step 5). Data changes do not go here: they are backend `side_effecting` tools (backend guide §0), so they get an approval.
 
 Rules: register before or after `connect()` (the SDK re-advertises on changes); unregister (`off()`) when the component unmounts; make the handler idempotent and return counts the agent can repeat; describe every parameter. In React, wrap this in a small `useRelayAction(name, handler, spec)` hook that registers in an effect and calls `off()` in its cleanup.
 

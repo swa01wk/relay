@@ -60,6 +60,7 @@ export function AssistantPanel() {
     <aside
       className="sticky top-0 hidden h-svh w-[380px] shrink-0 flex-col border-l bg-background lg:flex"
       data-testid="assistant-panel"
+      data-relay-ignore // the assistant's own chat input is not a page form for it to fill
     >
       <div className="flex h-(--header-height) items-center gap-2 border-b px-4">
         <SparklesIcon className="size-4" />

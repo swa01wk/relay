@@ -20,6 +20,10 @@ export {
   submitForm,
   surfaceToCsv,
 } from "./ui-surfaces.js";
+export { NAVIGATE_ACTION, registerAutoNavigation } from "./navigation.js";
+export type { AutoNavigationOptions, NavigationPage } from "./navigation.js";
+export { PAGE_FORM_ACTION_PREFIX, registerPageForms } from "./page-forms.js";
+export type { PageFormsOptions } from "./page-forms.js";
 export type {
   PresentUiParams,
   UiCardsSurface,

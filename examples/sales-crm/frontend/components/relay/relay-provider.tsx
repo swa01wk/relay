@@ -4,6 +4,8 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
   createRelaySession,
+  registerAutoNavigation,
+  registerPageForms,
   registerPlaygroundSurfaces,
   submitForm as sendFormValues,
   type ActionHandler,
@@ -154,6 +156,10 @@ export function RelayProvider({ children }: { children: React.ReactNode }) {
     const offSurfaces = registerPlaygroundSurfaces(session, (params) => {
       setSurfaces((current) => applyPresentUi(current, params))
     })
+    // "Go to the dashboard": every page the sidebar links to, opened with the Next.js router.
+    const offNavigation = registerAutoNavigation(session, { navigate: (path) => router.push(path) })
+    // "Fill this form": the app's own forms on screen (canvas forms and the chat input are marked data-relay-ignore).
+    const offPageForms = registerPageForms(session)
     session.onConnectionState(setConnection)
     session.onVoiceState((state) => {
       voiceRef.current = state
@@ -238,6 +244,8 @@ export function RelayProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       offSurfaces()
+      offNavigation()
+      offPageForms()
       for (const entry of actions.values()) entry.off = undefined
       session.disconnect()
       if (sessionRef.current === session) sessionRef.current = null

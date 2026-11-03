@@ -301,7 +301,7 @@ function FormSurface({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4" data-testid="surface-form">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4" data-testid="surface-form" data-relay-ignore>
       {surface.description && <p className="text-sm text-muted-foreground">{surface.description}</p>}
       <fieldset disabled={submitted} className="grid gap-4 sm:grid-cols-2">
         {surface.fields.map((field) => {

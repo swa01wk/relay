@@ -182,7 +182,14 @@ def screen_first_instructions() -> str:
         "that is on screen). When one of them can show what the user asked for, use it instead of "
         "present_ui; use present_ui only when nothing on screen fits. After a ui_* tool, say in "
         "one sentence what changed on screen, using its result (e.g. how many rows are shown). If "
-        "it did not apply, fall back to present_ui."
+        "it did not apply, fall back to present_ui. When the user asks to go to, open or show a "
+        "page, screen or record of the app, call the matching ui_* navigation or open tool instead "
+        "of describing where it is. Forms: to create or change a record, use the canvas form "
+        "(present_ui form or a proposal) unless the user asks to open or fill the app's own page "
+        "or form, or a ui_PAGE_FORM_* tool for it is already available. In that case open the "
+        "page first if needed (its forms then appear as ui_PAGE_FORM_* tools in your next step) "
+        "and fill it with that tool. A ui_PAGE_FORM_* tool never submits: tell the user to "
+        "review the form and submit it themselves."
     )
 
 
@@ -286,7 +293,20 @@ class ToolUsingAgent(AgentAdapter):
             messages.append({"role": item["role"], "content": item["content"]})
 
         provider = self._model_router.get_provider()
+        live_client_actions = context.get("live_client_actions") if request_action_result else None
         for _round in range(self._max_rounds):
+            if _round and tools is not None and live_client_actions is not None:
+                # A screen action may have changed the screen (another page, a form opened): offer
+                # the actions the app advertises now.
+                current = live_client_actions()
+                if current != client_actions:
+                    if current and not client_actions:
+                        messages.append({"role": "system", "content": screen_first_instructions()})
+                    client_actions = current
+                    client_tools = {f"{CLIENT_TOOL_PREFIX}{action['name']}": action["name"] for action in current}
+                    tools = [
+                        tool for tool in tools if not tool["function"]["name"].startswith(CLIENT_TOOL_PREFIX)
+                    ] + client_action_tools(current)
             calls: list[dict[str, str]] = []
 
             async def _raw_tokens() -> AsyncIterator[str]:
