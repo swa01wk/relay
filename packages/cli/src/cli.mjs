@@ -6,10 +6,13 @@ import { parseArgs } from "node:util";
 
 import { ApiError, request } from "./api.mjs";
 import { clearCredentials, credentialsPath, gatewayUrl, readCredentials, writeCredentials } from "./config.mjs";
+import { init } from "./init.mjs";
 
 const HELP = `relay — Relay command line
 
 Usage
+  relay init [--dir <path>]                      Point this project's coding agents (Claude Code, Cursor, Codex)
+                                                 at the Relay SDK docs: AGENTS.md, CLAUDE.md, .cursor/rules
   relay login [--gateway <url>] [--no-browser]   Sign in from the browser and save an account token
   relay logout [--all]                           Sign out this device (--all: every device)
   relay whoami                                   Show the signed-in account and its projects
@@ -54,6 +57,7 @@ Environment
 
 const OPTIONS = {
   gateway: { type: "string" },
+  dir: { type: "string" },
   project: { type: "string" },
   kind: { type: "string" },
   name: { type: "string" },
@@ -138,6 +142,7 @@ async function login(flags, out) {
     out.log(`Default project: ${poll.project.name} (${poll.project.id})`);
     out.log(`Token saved to ${path}`);
     out.log("\nNext: relay keys create --kind publishable");
+    out.log("Then, in your app's folder: relay init  (points your coding agent at the Relay docs)");
     return 0;
   }
   out.error("Login timed out. Run `relay login` again.");
@@ -522,6 +527,8 @@ export async function main(argv, out = console) {
   }
   try {
     switch (command) {
+      case "init":
+        return init(flags, out);
       case "login":
         return await login(flags, out);
       case "logout":

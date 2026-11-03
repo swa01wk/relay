@@ -11,7 +11,7 @@ Relay is a domain-agnostic platform for realtime voice + text AI assistants that
 | Path | What | Language |
 |---|---|---|
 | `packages/protocol/` | RP event catalog, envelope, JSON schema | Python |
-| `packages/cli/` | `@sumukhj1219-wkt-org/relay-cli` — the `relay` command line: `login` (browser device-code flow), projects, API keys, allowed origins. Plain Node ESM, no build step | JavaScript |
+| `packages/cli/` | `@sumukhj1219-wkt-org/relay-cli` — the `relay` command line: `init` (writes `AGENTS.md`/`CLAUDE.md`/Cursor-rule pointers to the installed SDK docs), `login` (browser device-code flow), projects, API keys, allowed origins. Plain Node ESM, no build step | JavaScript |
 | `packages/web-sdk/` | `@sumukhj1219-wkt-org/relay-web-sdk` — browser SDK (session, WebSocket/WebRTC, actions, state, surfaces) + agent docs (`AGENTS.md`, `docs/`). Apps import the build in `dist/` (made on `pnpm install`); after editing `src/` run `pnpm --filter @sumukhj1219-wkt-org/relay-web-sdk build` | TypeScript |
 | `runtime/` | `SessionManager` (one actor queue per session), turns, `ToolUsingAgent`, tool registry/executor, approvals (HITL), ports | Python |
 | `adapters/` | Port implementations: Pipecat SmallWebRTC, OpenAI, Deepgram, Silero, Postgres, Redis, HTTP tools; `observability/` (Prometheus metrics, OpenTelemetry traces — subscribers on the event stream) | Python |

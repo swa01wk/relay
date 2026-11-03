@@ -188,3 +188,57 @@ test("logs and usage read the project's activity and keep conversation text from
     delete process.env.RELAY_GATEWAY_URL;
   }
 });
+
+test("init points coding agents at the installed SDK docs and is safe to re-run", async () => {
+  const { mkdirSync, readFileSync, existsSync } = await import("node:fs");
+  const repo = mkdtempSync(join(tmpdir(), "relay-init-"));
+  // Hoisted monorepo install: the SDK sits in the workspace root, the app in apps/web.
+  const sdk = join(repo, "node_modules", "@sumukhj1219-wkt-org", "relay-web-sdk");
+  mkdirSync(join(sdk, "docs"), { recursive: true });
+  writeFileSync(join(sdk, "AGENTS.md"), "# index\n");
+  writeFileSync(join(sdk, "package.json"), JSON.stringify({ version: "9.9.9" }));
+  const app = join(repo, "apps", "web");
+  mkdirSync(app, { recursive: true });
+  writeFileSync(join(app, "AGENTS.md"), "# My app\n\nUse pnpm.\n");
+
+  let out = capture();
+  assert.equal(await main(["init", "--dir", app], out), 0);
+  const text = out.lines.join("\n");
+  assert.match(text, /added to\s+AGENTS\.md/);
+  assert.match(text, /created\s+CLAUDE\.md/);
+  assert.match(text, /SDK 9\.9\.9/);
+
+  const ref = "../../node_modules/@sumukhj1219-wkt-org/relay-web-sdk";
+  const agents = readFileSync(join(app, "AGENTS.md"), "utf8");
+  assert.ok(agents.startsWith("# My app\n\nUse pnpm.\n\n<!-- relay:start"), "keeps the developer's own text first");
+  assert.ok(agents.includes(`${ref}/docs/02-backend.md`));
+  const claude = readFileSync(join(app, "CLAUDE.md"), "utf8");
+  assert.ok(claude.includes(`@${ref}/AGENTS.md`));
+  const rule = readFileSync(join(app, ".cursor", "rules", "relay.mdc"), "utf8");
+  assert.match(rule, /^---\n[\s\S]*alwaysApply: true\n---\n/);
+
+  // Re-run: nothing changes, no second block.
+  out = capture();
+  assert.equal(await main(["init", "--dir", app], out), 0);
+  assert.equal(out.lines.filter((l) => /unchanged/.test(l)).length, 3);
+  assert.equal(readFileSync(join(app, "AGENTS.md"), "utf8"), agents);
+
+  // An edited block is replaced in place; text after it is kept.
+  writeFileSync(join(app, "AGENTS.md"), agents.replace("Do not guess", "stale") + "\n## Later\n");
+  out = capture();
+  await main(["init", "--dir", app], out);
+  const updated = readFileSync(join(app, "AGENTS.md"), "utf8");
+  assert.equal(updated.match(/relay:start/g).length, 1);
+  assert.ok(updated.includes("Do not guess") && updated.endsWith("## Later\n"));
+
+  // Not installed yet: default path and an install hint.
+  const bare = mkdtempSync(join(tmpdir(), "relay-init-"));
+  out = capture();
+  assert.equal(await main(["init", "--dir", bare], out), 0);
+  assert.match(out.lines.join("\n"), /npm install @sumukhj1219-wkt-org\/relay-web-sdk/);
+  assert.ok(readFileSync(join(bare, "AGENTS.md"), "utf8").includes("`node_modules/@sumukhj1219-wkt-org/relay-web-sdk/AGENTS.md`"));
+  assert.ok(existsSync(join(bare, ".cursor", "rules", "relay.mdc")));
+
+  out = capture();
+  assert.equal(await main(["init", "--dir", join(bare, "missing")], out), 1);
+});
