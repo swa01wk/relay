@@ -25,6 +25,17 @@ type IcePayload = {
   sdp_mline_index: number;
 };
 
+/**
+ * Clean microphone audio for speech recognition: the browser's echo cancellation (so the assistant's
+ * own voice from the speakers isn't transcribed), noise suppression and level control, mono.
+ */
+const MIC_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  channelCount: 1,
+};
+
 export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): SmallWebRtcSession {
   const baseUrl = options.gatewayUrl.replace(/\/$/, "");
   // The session token goes in a header, never the URL (URLs end up in proxy logs and history).
@@ -147,7 +158,7 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
     iceQueue.length = 0;
 
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS, video: false });
       startLevelMeter(localStream);
       if (audioContext?.state === "suspended") {
         await audioContext.resume();

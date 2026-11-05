@@ -67,7 +67,7 @@ Who defines what:
 - **Tool calls** — nobody writes these. The **LLM** decides at runtime which tool to call with which arguments.
 - **The agent** — backend: one YAML manifest (`agent_id`, tools URL, system prompt) uploaded to the developer's project with `relay agents push`. No Python; Relay discovers the tools. Each project has its own agents, tools service and model API key.
 - **UI actions + renderers** — frontend: the app registers handlers (`registerAction`, `registerPlaygroundSurfaces`) and draws surfaces with its own components.
-- The **SDK never renders and never holds AI logic or secrets**. It connects, streams events, acknowledges actions, versions shared state, handles voice, and normalizes AI-generated UI into typed data.
+- The **SDK never renders and never holds AI logic or secrets** (one opt-in exception: the video avatar in the separate `/avatar` entry point; add it only when asked — frontend guide §5). It connects, streams events, acknowledges actions, versions shared state, handles voice, and normalizes AI-generated UI into typed data.
 
 ## Rules that are easy to get wrong
 

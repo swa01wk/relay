@@ -87,7 +87,9 @@ Set in `infra/docker/.env` (or the gateway container's environment). The gateway
 | **Voice / WebRTC** | | |
 | `RELAY_DISABLE_WEBRTC` | — | `1` disables voice (text only) |
 | `RELAY_ICE_STUN_URL` | `stun:stun.l.google.com:19302` | STUN server (production behind strict firewalls also needs TURN) |
-| `DEEPGRAM_STT_MODEL` | `nova-3-general` | Speech-to-text model |
+| `DEEPGRAM_STT_MODEL` | `nova-3-general` | Speech-to-text model. Use a nova-3 model: Flux models are not supported for recognition (logged and replaced by `nova-3-general`), and key terms need nova-3 |
+| `DEEPGRAM_STT_LANGUAGE` | `en` | Recognition language, e.g. `en-US`, `en-IN` (Indian English), `multi` (several languages in one sentence, e.g. Hindi + English) |
+| `DEEPGRAM_STT_KEYTERMS` | — | Comma-separated words every session should listen for, added after the session agent's own manifest `keyterms` (100 in total) |
 | `DEEPGRAM_TTS_MODEL` / `DEEPGRAM_TTS_ENCODING` / `DEEPGRAM_TTS_SAMPLE_RATE` | `flux-haley-en` / `linear16` / `24000` | Text-to-speech voice and audio format |
 | `RELAY_TURN_DETECTOR` | `hybrid` | `hybrid` (Silero start + Smart Turn stop) or `silero` |
 | `RELAY_VAD_MIN_VOLUME` | `0.35` | Voice activity threshold (raise if speaker echo triggers interruptions) |

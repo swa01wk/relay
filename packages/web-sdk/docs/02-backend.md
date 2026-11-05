@@ -244,7 +244,12 @@ instructions: >                                    # optional hints for tables/c
   Orders over time → line chart; one order → kv plus a line-items table.
 tool_timeout_seconds: 30                           # optional (1–120)
 model: gpt-4o-mini                                 # optional; default is the gateway's model
+keyterms:                                          # optional: words voice recognition should listen for
+  - Acme Freight                                   #   (product, customer and staff names, jargon; max 100, 50 chars each)
+  - ORD number
 ```
+
+Add `keyterms` when the app has voice: speech recognition mishears names it has never seen. List the product name, the customers, staff and places users will say, and domain words; plain spellings, one phrase per item.
 
 `tools_url` must be a literal `https://` URL that resolves to a public address (no `${VAR}`, no credentials in the URL, no private or loopback hosts).
 

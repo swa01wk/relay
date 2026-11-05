@@ -214,6 +214,13 @@ class SessionManager:
                 return resolved
         return self.agent_runtimes.get(session.agent_id, self.agent_runtime)
 
+    def speech_keyterms_for(self, session_id: str) -> tuple[str, ...]:
+        """Key terms speech recognition should listen for in this session (its agent's)."""
+        session = self._sessions.get(session_id)
+        if session is None:
+            return ()
+        return tuple(getattr(self._runtime_for(session), "speech_keyterms", ()) or ())
+
     def _tools_for(self, session: SessionRecord) -> RegistryToolExecutor | None:
         executor = self._runtime_for(session).tool_executor or self.tool_executor
         if executor is not None and executor.hitl_for_session is None:

@@ -14,6 +14,13 @@ test("entry points exist in the build", () => {
   }
 });
 
+test("optional avatar entry point is built and loads on its own", async () => {
+  const entry = pkg.exports["./avatar"];
+  for (const file of [entry.import, entry.types]) assert.ok(existsSync(join(root, file)), `${file} is missing`);
+  const avatar = await import(join(root, entry.import));
+  for (const name of ["mountAvatar", "watchAssistantState"]) assert.equal(typeof avatar[name], "function", name);
+});
+
 test("built entry loads without a bundler and exposes the public API", async () => {
   const sdk = await import(join(root, pkg.main));
   for (const name of ["createRelaySession", "createSession", "registerPlaygroundSurfaces", "submitForm", "surfaceToCsv"]) {

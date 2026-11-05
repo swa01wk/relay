@@ -34,6 +34,8 @@ type Session = ReturnType<typeof createRelaySession>
 type ActionEntry = { name: string; handler: ActionHandler; spec: ActionSpec; off?: () => void }
 
 type RelayContextValue = {
+  /** The live session (null between reconnects), for SDK helpers such as the avatar. Re-read when `connection` changes. */
+  getSession: () => Session | null
   connection: RelayConnectionState
   voice: VoiceConnectionState
   micMuted: boolean
@@ -278,7 +280,9 @@ export function RelayProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const getSession = React.useCallback(() => sessionRef.current, [])
   const value: RelayContextValue = {
+    getSession,
     connection,
     voice,
     micMuted,

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -95,6 +95,8 @@ class PipecatSmallWebRtcTransport(RealtimeTransport):
     voice_hooks: VoicePipelineHooks | None = None
     turn_detector_factory: Callable[[], Any] | None = None
     stt_factory: Callable[[], Any] | None = None
+    # session_id -> the session agent's speech key terms (wired to SessionManager.speech_keyterms_for).
+    stt_keyterms_resolver: Callable[[str], Sequence[str]] | None = None
     agent_output_sample_rate: int = 24000
     _handler: SmallWebRTCRequestHandler = field(init=False, repr=False)
     _sessions: dict[str, _ActiveSession] = field(default_factory=dict, repr=False)
@@ -238,6 +240,16 @@ class PipecatSmallWebRtcTransport(RealtimeTransport):
         except Exception:
             logger.debug("handler close failed", exc_info=True)
 
+    def _keyterms_for(self, session_id: str) -> Sequence[str]:
+        if self.stt_keyterms_resolver is None:
+            return ()
+        try:
+            return self.stt_keyterms_resolver(session_id)
+        except Exception:
+            # Hints only: never fail a voice session over them.
+            logger.exception("speech key terms lookup failed session_id=%s", session_id)
+            return ()
+
     async def _attach_pipeline(self, session_id: str, webrtc_connection: SmallWebRTCConnection) -> None:
         active = self._sessions.setdefault(session_id, _ActiveSession(session_id=session_id))
         active.pc_id = webrtc_connection.pc_id
@@ -268,7 +280,9 @@ class PipecatSmallWebRtcTransport(RealtimeTransport):
             turn_detector = (
                 self.turn_detector_factory() if self.turn_detector_factory else build_turn_detector()
             )
-            stt = self.stt_factory() if self.stt_factory else build_pipecat_stt_service()
+            stt = self.stt_factory() if self.stt_factory else build_pipecat_stt_service(
+                keyterms=self._keyterms_for(session_id)
+            )
             if stt is None:
                 logger.warning(
                     "voice pipeline without STT (DEEPGRAM_API_KEY missing) session_id=%s",

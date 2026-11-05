@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { ApprovalCards } from "@/components/relay/approval-cards"
+import { AssistantAvatar } from "@/components/relay/assistant-avatar"
 import { useRelay } from "@/components/relay/relay-provider"
 import { cn } from "@/lib/utils"
 
@@ -75,6 +76,8 @@ export function AssistantPanel() {
           </Button>
         </div>
       </div>
+
+      <AssistantAvatar className="border-b py-3" />
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-4">

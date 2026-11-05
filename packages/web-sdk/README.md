@@ -38,4 +38,6 @@ await session.connect()
 session.sendText("Chart this month's orders by status")
 ```
 
+Optional video avatar (talks while the assistant speaks): `import { mountAvatar } from "@sumukhj1219-wkt-org/relay-web-sdk/avatar"`; see `docs/01-frontend.md` §5.
+
 Status: proof of concept. Install with `npm install @sumukhj1219-wkt-org/relay-web-sdk`; sign in and create a publishable key with the CLI (`npm install -g @sumukhj1219-wkt-org/relay-cli`, then `relay login`).

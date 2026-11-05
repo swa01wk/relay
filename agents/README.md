@@ -11,5 +11,6 @@ Each `*.yaml` here is a **gateway-wide** agent the gateway loads at startup (`RE
 | `system_prompt` / `system_prompt_file` | one of them | Who the assistant is and how it answers (file path is relative to the manifest) |
 | `instructions` | no | Extra hints for rendering results (tables, charts, forms) |
 | `tool_timeout_seconds` | no | Per tool call, default 30 |
+| `keyterms` | no | Words voice recognition should listen for (names, products, jargon); up to 100 phrases of 50 characters. Passed to Deepgram as `keyterm` hints (nova-3 models) |
 
 For files in this folder: restart the gateway after adding or editing a manifest. A manifest that fails to load (bad YAML, unreachable tools service, duplicate `agent_id`) is skipped and logged as `agent manifest skipped: …`.

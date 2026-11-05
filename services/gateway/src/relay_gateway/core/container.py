@@ -264,6 +264,7 @@ registry_tool_executor.hitl_for_session = lambda session_id: (
 if realtime_transport is not None:
     realtime_transport.on_metric = session_manager.record_transport_metric
     realtime_transport.on_connection_state = session_manager.record_transport_state
+    realtime_transport.stt_keyterms_resolver = session_manager.speech_keyterms_for
     realtime_transport.voice_hooks = VoicePipelineHooks(
         on_speech_started=session_manager.notify_voice_speech_started,
         on_speech_ended=session_manager.notify_voice_speech_ended,

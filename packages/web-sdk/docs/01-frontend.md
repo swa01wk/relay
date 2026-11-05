@@ -369,6 +369,30 @@ session.grantApproval(approvalId)
 session.rejectApproval(approvalId)
 ```
 
+### Optional: an assistant avatar
+
+Add one only when the developer asks for it. It lives in a separate entry point, so apps that don't import it don't bundle it. `mountAvatar` loops a **talking** video while the assistant speaks (voice), or while a reply streams in (text sessions), and crossfades to an **idle** clip or a still `poster` otherwise. The videos play muted; the voice comes from the session as usual.
+
+```ts
+import { mountAvatar } from "@sumukhj1219-wkt-org/relay-web-sdk/avatar"
+
+const avatar = mountAvatar(element, session, {      // element: a sized box, e.g. 144×144 px; the media fills it
+  talking: "/avatar/talking.mp4",                     // required
+  idle: "/avatar/idle.mp4",                           // optional; without it the poster is shown while idle
+  poster: "/avatar/still.jpg",                        // recommended: shown while videos load
+  label: "Assistant",                                 // accessible name
+  onStateChange: (state) => setLabel(state),          // "idle" | "listening" | "thinking" | "speaking"
+})
+avatar.destroy()                                      // on unmount, and before mounting on a new session
+```
+
+- The element gets `data-relay-avatar-state="idle|listening|thinking|speaking"`, for styling (e.g. a ring while speaking).
+- `idleInterval: [minMs, maxMs]` (with a `poster`): instead of looping the idle clip, show the still and play the clip once at a random moment in that range, e.g. `[6000, 14000]` for an occasional blink. Make the clip start and end on the poster's frame so it doesn't jump.
+- Optional `listening` and `thinking` clips; each falls back to `idle`. Other options: `fit` (`"cover"`, default, or `"contain"`), `fadeMs` (200), `speakingHoldMs` (350), `textSpeaking` (true), `textHoldMs` (700).
+- In React, mount it in an effect keyed on the session and call `destroy()` in the cleanup. Remount after a reconnect, since that creates a new session.
+- Drawing your own avatar (sprites, canvas, 3D): use `watchAssistantState(session, (state) => …, options?)`. It returns a function that stops watching.
+- Video tips (for `idleInterval`, an idle clip that plays a short blink/glance and returns to the poster frame): a head-and-shoulders crop, about 640×640, H.264 MP4 with no audio track and `+faststart`, a few seconds that loop cleanly (forward then reversed loops without a jump), and a poster taken from the clip's first frame so starting to talk doesn't jump. Use footage you have the rights to.
+
 ## 6. Verify (do all of these)
 
 - [ ] Page loads with no console errors; connection state reaches `"ready"`.

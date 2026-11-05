@@ -32,6 +32,8 @@ class AgentRuntime:
     tool_executor: RegistryToolExecutor | None = None
     # USD per 1M tokens by model id (RELAY_MODEL_PRICES); empty → tokens only, no cost.
     model_prices: dict[str, dict[str, float]] = field(default_factory=load_prices)
+    # Words this agent's voice sessions should recognise (passed to speech-to-text as hints).
+    speech_keyterms: tuple[str, ...] = ()
 
     async def _assistant_tokens(
         self,

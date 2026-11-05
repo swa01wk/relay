@@ -132,3 +132,39 @@ def test_crm_tools_service_serves_discovery():
         "create_account", "create_contact", "update_contact", "create_deal", "update_deal", "delete_deal", "log_activity",
     }
     json.dumps(tools)
+
+
+def test_repo_sales_crm_manifest_has_speech_keyterms(monkeypatch):
+    monkeypatch.setenv("RELAY_CRM_TOOLS_URL", "http://crm-tools:8091")
+    manifest = parse_manifest(REPO / "agents" / "sales-crm.yaml")
+    assert "Northwind Logistics" in manifest.keyterms
+    assert "Daniel Okafor" in manifest.keyterms
+
+
+def test_keyterms_are_normalised_and_reach_the_runtime():
+    from relay_gateway.services.agent_service import build_manifest_runtime, parse_manifest_text
+
+    manifest = parse_manifest_text(
+        "agent_id: x\ntools_url: http://t\nsystem_prompt: hi\nkeyterms: ['WebTrak', ' Web  Trak ', webtrak, 2026, '']\n"
+    )
+    assert manifest.keyterms == ("WebTrak", "Web Trak", "2026")
+    runtime = build_manifest_runtime(
+        manifest, TOOLS[:1], model_router=ModelRouter(OpenAIProvider(api_key=None)), delegate=None
+    )
+    assert runtime.speech_keyterms == ("WebTrak", "Web Trak", "2026")
+
+
+@pytest.mark.parametrize(
+    ("keyterms", "error"),
+    [
+        ("WebTrak", "must be a list"),
+        ("[{a: b}]", "must be a list"),
+        ("['" + "x" * 51 + "']", "longer than 50"),
+        ("[" + ", ".join(f"t{i}" for i in range(101)) + "]", "at most 100"),
+    ],
+)
+def test_invalid_keyterms_are_rejected(keyterms, error):
+    from relay_gateway.services.agent_service import parse_manifest_text
+
+    with pytest.raises(ManifestError, match=error):
+        parse_manifest_text(f"agent_id: x\ntools_url: http://t\nsystem_prompt: hi\nkeyterms: {keyterms}\n")

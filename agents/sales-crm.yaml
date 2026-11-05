@@ -15,3 +15,36 @@ instructions: >
   markdown.
 
 tool_timeout_seconds: 30
+
+# Words speech recognition should listen for: names it would otherwise mishear (max 100, 50 chars each).
+keyterms:
+  # Accounts
+  - Northwind Logistics
+  - Brightpath Health
+  - Summit Retail Group
+  - Cobalt Financial
+  - Evergreen Energy
+  - Lumen Education
+  - Atlas Manufacturing
+  - Pioneer Biotech
+  - Harbor Media
+  - Keystone Insurance
+  - Vertex Software
+  - Riverbend Foods
+  # Reps
+  - Ava Thompson
+  - Marcus Lee
+  - Sofia Alvarez
+  - Daniel Okafor
+  - Hannah Becker
+  # Pipeline and products
+  - Prospecting
+  - Qualification
+  - Negotiation
+  - Closed Won
+  - Closed Lost
+  - pipeline
+  - quota
+  - Analytics add-on
+  - Data migration
+  - Seat expansion

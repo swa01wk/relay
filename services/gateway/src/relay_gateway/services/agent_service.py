@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
 _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 _REQUIRED = ("agent_id", "tools_url")
 _AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+_MAX_KEYTERMS = 100
+_MAX_KEYTERM_CHARS = 50
 
 
 class ManifestError(ValueError):
@@ -58,6 +60,8 @@ class AgentManifest:
     tool_timeout_seconds: float = 30.0
     source: str = ""
     model: str | None = None  # model id for this agent; default is the provider's
+    # Words speech recognition should listen for (product, customer and staff names, jargon).
+    keyterms: tuple[str, ...] = ()
 
 
 def _expand_env(value: str) -> str:
@@ -92,6 +96,27 @@ def parse_manifest_text(text: str, *, source: str = "manifest", system_prompt: s
     return manifest_from_mapping(raw, source=source, expand_env=False)
 
 
+def _keyterms(value: Any, source: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(t, (str, int, float)) for t in value):
+        raise ManifestError(f"{source}: keyterms must be a list of words or short phrases")
+    terms: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        term = " ".join(str(item).split())
+        if not term:
+            continue
+        if len(term) > _MAX_KEYTERM_CHARS:
+            raise ManifestError(f"{source}: keyterm longer than {_MAX_KEYTERM_CHARS} characters: {term[:60]!r}")
+        if term.lower() not in seen:
+            seen.add(term.lower())
+            terms.append(term)
+    if len(terms) > _MAX_KEYTERMS:
+        raise ManifestError(f"{source}: at most {_MAX_KEYTERMS} keyterms, got {len(terms)}")
+    return tuple(terms)
+
+
 def manifest_from_mapping(raw: Any, *, source: str, expand_env: bool) -> AgentManifest:
     if not isinstance(raw, dict):
         raise ManifestError(f"{source}: expected a mapping")
@@ -118,6 +143,7 @@ def manifest_from_mapping(raw: Any, *, source: str, expand_env: bool) -> AgentMa
     except (TypeError, ValueError):
         raise ManifestError(f"{source}: tool_timeout_seconds must be a number") from None
     return AgentManifest(
+        keyterms=_keyterms(raw.get("keyterms"), source),
         agent_id=agent_id,
         tools_url=tools_url,
         system_prompt=str(prompt).strip(),
@@ -169,6 +195,7 @@ def build_manifest_runtime(
     return AgentRuntime(
         model_router=model_router,
         agent=agent,
+        speech_keyterms=manifest.keyterms,
         tool_executor=RegistryToolExecutor(
             registry=registry,
             delegate=delegate,

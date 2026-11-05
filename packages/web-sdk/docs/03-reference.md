@@ -90,6 +90,8 @@ Navigation: `registerAutoNavigation` (`AutoNavigationOptions`, `NavigationPage`)
 
 Page forms: `registerPageForms(session, { root?, maxForms?, maxFields? })` (`PageFormsOptions`), constant `PAGE_FORM_ACTION_PREFIX`. HTML attributes: `data-relay-ignore` (never offer or fill this element or anything inside it), `data-relay-form="Title"` (name a form).
 
+Avatar (separate entry point `@sumukhj1219-wkt-org/relay-web-sdk/avatar`): `mountAvatar(element, session, { talking, idle?, listening?, thinking?, poster?, idleInterval?, label?, fit?, fadeMs?, speakingHoldMs?, textSpeaking?, textHoldMs?, onStateChange? })` → `{ state, destroy }` (`AvatarOptions`, `AvatarHandle`); `watchAssistantState(session, onChange, options?)` → stop function (`AssistantState`: `idle`, `listening`, `thinking`, `speaking`). The element gets `data-relay-avatar-state`.
+
 Surfaces: `registerPlaygroundSurfaces`, `submitForm`, `registerFormFill` (`UiFormFill`), `surfaceToCsv`, `normalizeUiSurface`, `normalizePresentUiParams`, `normalizeTableSurface`, `normalizeChartSurface`, constants `PRESENT_UI_ACTION`, `SHOW_TABLE_ACTION`, `FORM_SUBMIT_EVENT`, `FILL_FORM_ACTION`, and the `Ui*` types.
 
 ## Limits and sign-in rules
