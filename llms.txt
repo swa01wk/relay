@@ -82,6 +82,11 @@ Key rules for code that integrates Relay:
 - [examples/mortgage-servicing/agent/src/relay_mortgage_agent/agent.py](examples/mortgage-servicing/agent/src/relay_mortgage_agent/agent.py): custom agent — deterministic routes, draft/approval/commit flow, falling back to `ToolUsingAgent` for open questions
 - [examples/mortgage-servicing/agent/src/relay_mortgage_agent/tool_definitions.py](examples/mortgage-servicing/agent/src/relay_mortgage_agent/tool_definitions.py): how a domain registers its tools
 
+## Website and Experience Center
+
+- [apps/website](apps/website): marketing site + Experience Center (`/try`, Next.js 16, :3003); the example gallery comes only from [lib/examples.ts](apps/website/lib/examples.ts)
+- [docs/experience-center.md](docs/experience-center.md): per-visitor sandboxes — the example app's server starts sessions for `user = sandbox_…` ([examples/shared/sandbox](examples/shared/sandbox)), tools services keep one dataset per sandbox id from `X-Relay-User`; how to add an example
+
 ## Running it
 
 - [README.md](README.md): repository layout, Docker Compose quick start (gateway :8080, mortgage tools :8090, CRM tools :8091, mortgage UI :3000, CRM UI :3002), test commands

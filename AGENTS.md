@@ -18,6 +18,8 @@ Relay is a domain-agnostic platform for realtime voice + text AI assistants that
 | `services/gateway/` | FastAPI app in three layers — `controllers/` (HTTP + WebSocket), `services/` (logic, incl. the agent manifest loader `agent_service.py`), `repositories/` (stores) — wired in `core/container.py` | Python |
 | `agents/` | Declarative agents (`*.yaml` + prompt files), mounted into the gateway | YAML |
 | `examples/sales-crm/` | **Primary reference**: `frontend/` (Next.js 16 + shadcn), `tools/` (tools service) — agent is `agents/sales-crm.yaml` | TS / Python |
+| `examples/shared/sandbox/` | `@relay/example-sandbox` — Experience Center helpers for example apps' servers (per-visitor session + reset) | TypeScript |
+| `apps/website/` | Marketing site + Experience Center (`/try`, iframes the examples in sandbox mode); gallery from `lib/examples.ts` — see [docs/experience-center.md](docs/experience-center.md) | TS |
 | `examples/mortgage-servicing/` | Custom Python agent example (deterministic routes, approve → commit → verify) | TS / Python |
 | `infra/docker/` | Compose stack, Dockerfiles, `.env`; `docker-compose.observability.yml` (optional Prometheus + Grafana) | — |
 | `infra/observability/` | Prometheus scrape config + alert rules, Grafana dashboard (a test checks they only use exported metrics) | YAML / JSON |

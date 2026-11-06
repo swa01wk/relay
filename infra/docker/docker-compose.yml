@@ -34,6 +34,9 @@ services:
       dockerfile: infra/docker/Dockerfile.mortgage-tools
     ports:
       - "8090:8090"
+    # Experience Center: sessions for a `sandbox_…` user get their own copy of the data.
+    environment:
+      MORTGAGE_SANDBOXES: "1"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
       interval: 10s
@@ -49,6 +52,8 @@ services:
     # CRM data (SQLite) survives restarts and `down`; `down -v` resets it to the demo seed.
     environment:
       CRM_DB_PATH: /data/crm.db
+      # Experience Center: sessions for a `sandbox_…` user get their own database here.
+      CRM_SANDBOX_DIR: /data/sandboxes
     volumes:
       - crm-data:/data
     healthcheck:

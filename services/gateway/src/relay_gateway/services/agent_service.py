@@ -19,6 +19,7 @@ import asyncio
 import logging
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -248,8 +249,12 @@ async def load_agent_manifests(
     attempts: int = 10,
     delay_seconds: float = 2.0,
     transport: httpx.AsyncBaseTransport | None = None,
+    user_for_session: Callable[[str], dict[str, Any] | None] | None = None,
 ) -> list[str]:
-    """Register every manifest in ``agents_dir``; returns the agent ids loaded."""
+    """Register every manifest in ``agents_dir``; returns the agent ids loaded.
+
+    ``user_for_session`` sends each session's end user to the tools service as ``X-Relay-User``.
+    """
     if not agents_dir.is_dir():
         logger.info("no agent manifests directory at %s", agents_dir)
         return []
@@ -265,7 +270,11 @@ async def load_agent_manifests(
         except ManifestError as exc:
             logger.error("agent manifest skipped: %s", exc)
             continue
-        delegate = HttpToolExecutor(base_url=manifest.tools_url, timeout_seconds=manifest.tool_timeout_seconds)
+        delegate = HttpToolExecutor(
+            base_url=manifest.tools_url,
+            timeout_seconds=manifest.tool_timeout_seconds,
+            user_for_session=user_for_session,
+        )
         delegates.append(delegate)
         runtimes[manifest.agent_id] = build_manifest_runtime(
             manifest, specs, model_router=model_router, delegate=delegate

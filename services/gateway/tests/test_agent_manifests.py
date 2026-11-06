@@ -168,3 +168,29 @@ def test_invalid_keyterms_are_rejected(keyterms, error):
 
     with pytest.raises(ManifestError, match=error):
         parse_manifest_text(f"agent_id: x\ntools_url: http://t\nsystem_prompt: hi\nkeyterms: {keyterms}\n")
+
+
+@pytest.mark.asyncio
+async def test_manifest_agents_send_the_session_end_user(tmp_path):
+    _write(tmp_path, "crm.yaml", "agent_id: crm\ntools_url: http://tools.test\nsystem_prompt: You help with deals.\n")
+    delegates: list = []
+    await load_agent_manifests(
+        tmp_path,
+        model_router=ModelRouter(OpenAIProvider(api_key=None)),
+        runtimes={},
+        delegates=delegates,
+        attempts=1,
+        transport=_tools_transport(TOOLS, []),
+        user_for_session=lambda session_id: {"id": f"user-of-{session_id}"} if session_id == "s1" else None,
+    )
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    delegates[0]._transport = httpx.MockTransport(handler)  # tool calls use their own client
+    await delegates[0].execute("s1", tool_name="list_deals", arguments={})
+    await delegates[0].execute("s2", tool_name="list_deals", arguments={})
+    assert json.loads(sent[0].headers["X-Relay-User"]) == {"id": "user-of-s1"}
+    assert "X-Relay-User" not in sent[1].headers

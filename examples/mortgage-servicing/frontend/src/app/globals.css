@@ -3,16 +3,24 @@
 @tailwind utilities;
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
+  /* Servicing console: cool neutrals, deep teal brand, clear status colours. */
+  --background: 210 20% 97.5%;
+  --foreground: 222 30% 12%;
   --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --border: 214.3 31.8% 91.4%;
-  --radius: 0.5rem;
+  --card-foreground: 222 30% 12%;
+  --primary: 184 70% 26%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 184 55% 94%;
+  --muted: 214 24% 95%;
+  --muted-foreground: 218 12% 44%;
+  --border: 216 20% 89%;
+  --success: 152 60% 32%;
+  --success-soft: 150 50% 94%;
+  --warning: 32 90% 38%;
+  --warning-soft: 40 95% 93%;
+  --danger: 0 68% 46%;
+  --danger-soft: 0 85% 96%;
+  --radius: 0.625rem;
   --chart-1: 221 83% 53%;
   --chart-2: 160 84% 39%;
   --chart-3: 38 92% 50%;
@@ -23,6 +31,32 @@
 
 body {
   @apply bg-background text-foreground antialiased;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes relay-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.relay-pulse {
+  animation: relay-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-pulse,
+  .relay-panel-enter,
+  .relay-screen-enter {
+    animation: none;
+  }
 }
 
 @keyframes relay-panel-in {

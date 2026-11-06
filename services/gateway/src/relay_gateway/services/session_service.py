@@ -83,11 +83,18 @@ class SessionService:
         self._project_agents.bind_session(created["session_id"], project.id, agent_id)
         return created
 
-    async def create_dev(self, *, project_id: str, agent_id: str) -> dict[str, Any]:
-        """Unauthenticated session for local development and tests (``RELAY_DEV_SESSIONS=1``)."""
+    async def create_dev(
+        self, *, project_id: str, agent_id: str, user: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Unauthenticated session for local development and tests (``RELAY_DEV_SESSIONS=1``).
+
+        ``user`` lets a local app's server exercise per-user tools without a secret key; it is
+        trusted only because dev sessions are never enabled on a public gateway.
+        """
         if os.environ.get("RELAY_DEV_SESSIONS", "").lower() not in ("1", "true", "yes"):
             raise Disabled("dev sessions are disabled; create sessions with POST /v1/sessions and an API key")
-        return await self._create(project_id=project_id, agent_id=agent_id)
+        end_user = _clean_end_user(user) if user is not None else None
+        return await self._create(project_id=project_id, agent_id=agent_id, end_user=end_user)
 
     async def _create(
         self, *, project_id: str, agent_id: str, end_user: dict[str, Any] | None = None

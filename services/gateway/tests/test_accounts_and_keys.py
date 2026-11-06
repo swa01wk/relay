@@ -157,3 +157,15 @@ def test_dev_sessions_are_off_unless_enabled(client, monkeypatch):
     assert client.post("/dev/sessions", json={"project_id": "p", "agent_id": "a"}).status_code == 404
     monkeypatch.setenv("RELAY_DEV_SESSIONS", "1")
     assert client.post("/dev/sessions", json={"project_id": "p", "agent_id": "a"}).status_code == 200
+
+
+def test_dev_sessions_can_name_an_end_user(client):
+    from relay_gateway.core.container import session_repository
+
+    body = client.post(
+        "/dev/sessions", json={"project_id": "p", "agent_id": "a", "user": {"id": "sandbox_abc"}}
+    ).json()
+    assert session_repository.end_user(body["session_id"])["id"] == "sandbox_abc"
+    plain = client.post("/dev/sessions", json={"project_id": "p", "agent_id": "a"}).json()
+    assert session_repository.end_user(plain["session_id"]) is None
+    assert client.post("/dev/sessions", json={"project_id": "p", "agent_id": "a", "user": {"id": ""}}).status_code == 422

@@ -131,7 +131,10 @@ model_router = ModelRouter(model_provider)
 # plain assistant with no tools unless the bundled example is switched on (core/example_agents.py; demos and tests).
 # Sessions started with a project key never use it (see ProjectAgentService).
 if example_agents.enabled():
-    _default_agent, _default_registry, tool_delegate = example_agents.build(model_router)
+    # The lambda reads session_repository (defined below) when a tool is called.
+    _default_agent, _default_registry, tool_delegate = example_agents.build(
+        model_router, user_for_session=lambda session_id: session_repository.end_user(session_id)
+    )
 else:
     _default_agent, _default_registry, tool_delegate = ReferenceTextAgent(model_router), ToolRegistry(), _NoTools()
 registry_tool_executor = RegistryToolExecutor(
@@ -166,7 +169,11 @@ def add_tool_agent(
     is skipped. Sessions created with this ``agent_id`` use this agent and these tools.
     """
     url = os.environ.get(tools_url_env, "").strip()
-    delegate: ToolExecutor | None = HttpToolExecutor(base_url=url) if url else local_executor
+    delegate: ToolExecutor | None = (
+        HttpToolExecutor(base_url=url, user_for_session=lambda session_id: session_repository.end_user(session_id))
+        if url
+        else local_executor
+    )
     if delegate is None:
         return
     registry = ToolRegistry()
@@ -355,6 +362,7 @@ async def startup() -> None:
         model_router=model_router,
         runtimes=extra_agent_runtimes,
         delegates=extra_tool_delegates,
+        user_for_session=session_repository.end_user,
     )
     retention_service.start()
     # Pipecat/Silero prewarm can take 60–90s; do not block HTTP /health or WebSocket connect.

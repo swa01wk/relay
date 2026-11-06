@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* Dark-first; light when the visitor's system asks for it. */
+:root {
+  --bg: #08090b;
+  --bg-raised: #0f1114;
+  --bg-sunken: #050607;
+  --fg: #eceef1;
+  --fg-muted: #9aa1ab;
+  --fg-faint: #636a74;
+  --line: #1d2026;
+  --line-strong: #2b3038;
+  --accent: #5eead4;
+  --accent-fg: #04201b;
+  --accent-soft: rgb(94 234 212 / 0.1);
+  --warn: #fbbf24;
+  --violet: #a78bfa;
+  --rose: #fb7185;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #fbfbfa;
+    --bg-raised: #ffffff;
+    --bg-sunken: #f2f3f1;
+    --fg: #0d0f12;
+    --fg-muted: #4f5661;
+    --fg-faint: #858b94;
+    --line: #e4e6e3;
+    --line-strong: #d3d6d2;
+    --accent: #0d9488;
+    --accent-fg: #ffffff;
+    --accent-soft: rgb(13 148 136 / 0.08);
+    --warn: #b45309;
+    --violet: #7c3aed;
+    --rose: #e11d48;
+    color-scheme: light;
+  }
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-raised: var(--bg-raised);
+  --color-sunken: var(--bg-sunken);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-faint: var(--fg-faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-warn: var(--warn);
+  --color-violet: var(--violet);
+  --color-rose: var(--rose);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Faint grid behind the hero. */
+.grid-bg {
+  background-image:
+    linear-gradient(to right, var(--line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 30%, transparent 75%);
+}
+
+@keyframes event-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.event-in {
+  animation: event-in 240ms ease-out both;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+.caret {
+  animation: caret 1s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .event-in,
+  .caret {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}

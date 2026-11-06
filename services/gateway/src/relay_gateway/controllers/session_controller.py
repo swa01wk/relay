@@ -27,6 +27,7 @@ class SessionCreateRequest(BaseModel):
 class DevSessionCreateRequest(BaseModel):
     project_id: str = Field(min_length=1)
     agent_id: str = Field(min_length=1)
+    user: EndUser | None = Field(default=None, description="Optional end user, sent to tools as X-Relay-User")
 
 
 class SessionCreateResponse(BaseModel):
@@ -60,7 +61,12 @@ async def create_session(
 @router.post("/dev/sessions", response_model=SessionCreateResponse)
 async def create_dev_session(body: DevSessionCreateRequest) -> SessionCreateResponse:
     """Local development only (``RELAY_DEV_SESSIONS=1``): no key, caller names the project."""
-    return SessionCreateResponse(**await session_service.create_dev(project_id=body.project_id, agent_id=body.agent_id))
+    created = await session_service.create_dev(
+        project_id=body.project_id,
+        agent_id=body.agent_id,
+        user=body.user.model_dump(exclude_defaults=True) if body.user else None,
+    )
+    return SessionCreateResponse(**created)
 
 
 @router.get("/dev/sessions/{session_id}")

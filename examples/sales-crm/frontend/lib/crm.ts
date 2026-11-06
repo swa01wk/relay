@@ -43,8 +43,12 @@ export type Dashboard = {
 
 const CRM_TOOLS_URL = process.env.CRM_TOOLS_URL ?? "http://localhost:8091"
 
-export async function getDashboard(): Promise<Dashboard> {
-  const res = await fetch(`${CRM_TOOLS_URL}/dashboard`, { cache: "no-store" })
+/** `sandboxId`: the Experience Center visitor's own copy of the data (lib/sandbox.ts). */
+export async function getDashboard(sandboxId?: string | null): Promise<Dashboard> {
+  const res = await fetch(`${CRM_TOOLS_URL}/dashboard`, {
+    cache: "no-store",
+    headers: sandboxId ? { "X-Sandbox-Id": sandboxId } : {},
+  })
   if (!res.ok) throw new Error(`CRM tools API returned ${res.status}`)
   return res.json() as Promise<Dashboard>
 }

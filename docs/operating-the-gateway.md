@@ -14,7 +14,7 @@ agents and custom Python agents.
 | `GET /admin/sessions?limit=` | Recent sessions: `session_id`, `agent_id`, `project_id`, `trace_id`, `started_at`, `last_event_at`, `event_count`, `turns`, `errors`, `ended`, `live`. `Authorization: Bearer <RELAY_ADMIN_TOKEN>` |
 | `GET /admin/sessions/{id}` | Any session's timeline (same shape as the dev timeline) plus `audit`. Bearer admin token |
 | `GET /admin/audit?limit=&session_id=` | Audit trail, newest first: one entry per approval — `tool_name`, `summary`, `arguments`, `decision` (`pending`/`granted`/`rejected`), `via` (`approval`/`form_submit`), `outcome` (`saved`/`unverified`/`failed`), `error`, timestamps, `session_id`, `trace_id`. Bearer admin token |
-| `POST /dev/sessions` `{project_id, agent_id}` | Create a session → `{session_id, dev_token, token_expires_at, events}` (proof-of-concept token; the SDK calls this in `connect()`) |
+| `POST /dev/sessions` `{project_id, agent_id, user?}` | Create a session (`user` `{id, attributes?}` is sent to tools as `X-Relay-User`, like a secret-key session's; trusted only because dev sessions never run on a public gateway) → `{session_id, dev_token, token_expires_at, events}` (proof-of-concept token; the SDK calls this in `connect()`) |
 | `GET /dev/sessions/{id}?token=` | Session info |
 | `GET /dev/sessions/{id}/timeline?token=` | Ordered events + metrics/spans for debugging a session, with `usage` totals (model calls, tokens, `cost_usd` when prices are configured) |
 
@@ -25,6 +25,10 @@ expands in `tools_url`. They serve `POST /dev/sessions` (`RELAY_DEV_SESSIONS=1`)
 apps only — a session started with a project key uses that project's own agents and never these.
 Format: [agents/README.md](../agents/README.md). After editing, restart the gateway and look for
 `agent <id> loaded … (<n> tools)` or `agent manifest skipped: <reason>` in its log.
+
+Gateway-wide agents (manifests, `add_tool_agent` agents and the mortgage example) send the
+session's end user as `X-Relay-User`, like project agents. The example tools services use it for
+the Experience Center's per-visitor sandboxes ([experience-center.md](experience-center.md)).
 
 With `RELAY_EXAMPLE_MORTGAGE=1` the mortgage example is the default agent for dev sessions whose
 `agent_id` is not registered; otherwise the default is a plain assistant with no tools.

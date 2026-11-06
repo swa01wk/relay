@@ -9,11 +9,15 @@ import { SiteHeader } from "@/components/site-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { getDashboard, type Dashboard } from "@/lib/crm"
+import { SANDBOX_COOKIE, sandboxEnabled, sandboxIdFrom } from "@/lib/sandbox"
+import { cookies } from "next/headers"
 
 export default async function Page() {
   let dashboard: Dashboard | null = null
   try {
-    dashboard = await getDashboard()
+    // Experience Center: show this visitor's sandbox (the cookie is set when their session starts).
+    const sandboxId = sandboxEnabled() ? sandboxIdFrom((await cookies()).get(SANDBOX_COOKIE)?.value) : null
+    dashboard = await getDashboard(sandboxId)
   } catch {
     dashboard = null
   }

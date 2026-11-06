@@ -10,7 +10,7 @@ test.describe("Phase 5 typed actions", () => {
   test("Find Rajesh Sharma opens case with shared state", async ({ page }) => {
     await page.goto("http://localhost:3000");
     await page.getByRole("button", { name: "Connect", exact: true }).click();
-    await expect(page.getByText("RP:")).toContainText("ready", { timeout: 15_000 });
+    await expect(page.getByTestId("connection-state")).toContainText("ready", { timeout: 15_000 });
     await expect(page.getByText("Session ready.")).toBeVisible({ timeout: 15_000 });
 
     await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill("Find Rajesh Sharma");

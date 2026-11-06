@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3002",
+    "dev:sandbox": "NEXT_PUBLIC_RELAY_SANDBOX=1 RELAY_SANDBOX_FRAME_ANCESTORS=http://localhost:3003 next dev -p 3002",
     "build": "next build",
     "start": "next start -p 3002",
     "lint": "eslint",
@@ -16,6 +17,7 @@
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@relay/example-sandbox": "workspace:*",
     "@sumukhj1219-wkt-org/relay-web-sdk": "workspace:*",
     "@tanstack/react-table": "^9.2.6",
     "class-variance-authority": "^0.7.1",

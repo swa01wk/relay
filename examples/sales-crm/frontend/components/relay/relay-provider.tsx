@@ -24,6 +24,8 @@ const PROJECT_ID = process.env.NEXT_PUBLIC_PROJECT_ID ?? "proj-sales-crm"
 // local dev gateway (RELAY_DEV_SESSIONS=1), where the project id is enough.
 const API_KEY = process.env.NEXT_PUBLIC_RELAY_API_KEY
 const AGENT_ID = process.env.NEXT_PUBLIC_AGENT_ID ?? "sales-crm"
+// Experience Center: sessions come from this app's server, one data sandbox per visitor (lib/sandbox.ts).
+export const SANDBOX = ["1", "true", "yes"].includes((process.env.NEXT_PUBLIC_RELAY_SANDBOX ?? "").toLowerCase())
 const FORM_PREFIX = "[Form submitted]"
 
 export type ChatMessage = { id: string; role: "user" | "assistant" | "system"; text: string }
@@ -59,6 +61,8 @@ type RelayContextValue = {
   submitForm: (form: UiFormSurface, values: FormValues) => void
   clearSurfaces: () => void
   reconnect: () => void
+  /** Experience Center only: discard this visitor's changes and start a fresh conversation. */
+  resetSandbox: () => Promise<void>
   /** Register an app action the agent may call (prefer `useRelayAction`). Returns unregister. */
   registerAction: (name: string, handler: ActionHandler, spec: ActionSpec) => () => void
   /** Tell the agent what is on screen (merged into shared state; sent when connected). */
@@ -127,6 +131,8 @@ export function RelayProvider({ children }: { children: React.ReactNode }) {
   const [approvals, setApprovals] = React.useState<PendingApproval[]>([])
   const router = useRouter()
   const [generation, setGeneration] = React.useState(0)
+  // Experience Center: the session this app's server started for the visitor's sandbox.
+  const [serverSession, setServerSession] = React.useState<{ generation: number; sessionId: string; token: string } | null>(null)
   const sessionRef = React.useRef<Session | null>(null)
   // Actions survive reconnects and may be registered before the session exists.
   const actionsRef = React.useRef(new Map<string, ActionEntry>())
@@ -134,9 +140,31 @@ export function RelayProvider({ children }: { children: React.ReactNode }) {
   const voiceRef = React.useRef<VoiceConnectionState>("disconnected")
 
   React.useEffect(() => {
+    if (!SANDBOX) return
+    let cancelled = false
+    fetch("/api/assistant/session", { method: "POST" })
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(body.error ?? `status ${res.status}`)
+        if (!cancelled) setServerSession({ generation, sessionId: body.sessionId, token: body.token })
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(`Couldn't start the demo session (${e instanceof Error ? e.message : String(e)}).`)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [generation])
+
+  React.useEffect(() => {
+    if (SANDBOX && serverSession?.generation !== generation) return // waiting for the server
     const session = createRelaySession({
       gatewayUrl: GATEWAY_URL,
-      ...(API_KEY ? { apiKey: API_KEY } : { projectId: PROJECT_ID }),
+      ...(SANDBOX && serverSession
+        ? { sessionId: serverSession.sessionId, devToken: serverSession.token }
+        : API_KEY
+          ? { apiKey: API_KEY }
+          : { projectId: PROJECT_ID }),
       agentId: AGENT_ID,
       transport: "small-webrtc",
     })
@@ -252,7 +280,7 @@ export function RelayProvider({ children }: { children: React.ReactNode }) {
       session.disconnect()
       if (sessionRef.current === session) sessionRef.current = null
     }
-  }, [generation, router])
+  }, [generation, router, serverSession])
 
   const registerAction = React.useCallback(
     (name: string, handler: ActionHandler, spec: ActionSpec) => {
@@ -281,6 +309,13 @@ export function RelayProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const getSession = React.useCallback(() => sessionRef.current, [])
+  const reconnect = () => {
+    setError(null)
+    setMessages([])
+    setSurfaces([])
+    setBusy(false)
+    setGeneration((g) => g + 1)
+  }
   const value: RelayContextValue = {
     getSession,
     connection,
@@ -336,12 +371,13 @@ export function RelayProvider({ children }: { children: React.ReactNode }) {
     clearSurfaces: () => setSurfaces([]),
     registerAction,
     publishScreenState,
-    reconnect: () => {
-      setError(null)
-      setMessages([])
-      setSurfaces([])
-      setBusy(false)
-      setGeneration((g) => g + 1)
+    reconnect,
+    resetSandbox: async () => {
+      await fetch("/api/sandbox/reset", { method: "POST" }).catch(() => undefined)
+      setApprovals([])
+      setFormStatus({})
+      reconnect()
+      router.refresh() // re-read the (now fresh) dashboard data
     },
   }
 

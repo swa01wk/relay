@@ -24,7 +24,16 @@ _seeded_paths: set[str] = set()
 
 
 def db_path() -> str:
-    return os.environ.get("CRM_DB_PATH", "crm.db")
+    """The visitor's sandbox file inside ``sandbox.use(...)``, else ``$CRM_DB_PATH``."""
+    from crm_tools_api import sandbox
+
+    return sandbox.current_path() or os.environ.get("CRM_DB_PATH", "crm.db")
+
+
+def forget(path: str) -> None:
+    """Called before a database file is deleted, so it is seeded again when next used."""
+    with _lock:
+        _seeded_paths.discard(path)
 
 
 @contextmanager

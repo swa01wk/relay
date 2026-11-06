@@ -8,6 +8,8 @@ image does not need the example packages installed.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
+from typing import Any
 
 from relay_adapter_tools_http import HttpToolExecutor
 from relay_runtime import ModelRouter, ToolRegistry
@@ -27,8 +29,13 @@ def _commit_headers(tool_name: str) -> dict[str, str]:
     return {"X-Mortgage-Commit-Token": token}
 
 
-def build(model_router: ModelRouter) -> tuple[AgentAdapter, ToolRegistry, ToolExecutor]:
-    """Agent, tool registry and tool executor for the example."""
+def build(
+    model_router: ModelRouter,
+    *,
+    user_for_session: Callable[[str], dict[str, Any] | None] | None = None,
+) -> tuple[AgentAdapter, ToolRegistry, ToolExecutor]:
+    """Agent, tool registry and tool executor for the example. ``user_for_session`` sends the
+    session's end user (``X-Relay-User``) to the tools service, which keys sandbox data on it."""
     from relay_mortgage_agent import MortgageServicingAgent
     from relay_mortgage_agent.tool_definitions import register_mortgage_tools
     from relay_mortgage_agent.tools_local import LocalMortgageToolExecutor
@@ -37,6 +44,8 @@ def build(model_router: ModelRouter) -> tuple[AgentAdapter, ToolRegistry, ToolEx
     register_mortgage_tools(registry)
     url = os.environ.get("RELAY_MORTGAGE_TOOLS_URL", "").strip()
     delegate: ToolExecutor = (
-        HttpToolExecutor(base_url=url, headers_for_tool=_commit_headers) if url else LocalMortgageToolExecutor()
+        HttpToolExecutor(base_url=url, headers_for_tool=_commit_headers, user_for_session=user_for_session)
+        if url
+        else LocalMortgageToolExecutor()
     )
     return MortgageServicingAgent(model_router), registry, delegate

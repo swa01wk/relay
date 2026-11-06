@@ -4,12 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:sandbox": "NEXT_PUBLIC_RELAY_SANDBOX=1 RELAY_SANDBOX_FRAME_ANCESTORS=http://localhost:3003 next dev -p 3000",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@relay/example-sandbox": "workspace:*",
     "@sumukhj1219-wkt-org/relay-web-sdk": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

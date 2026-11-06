@@ -356,30 +356,112 @@ function SurfaceView({ surface, onSubmitForm }: { surface: UiSurface; onSubmitFo
   }
 }
 
+/**
+ * The results canvas: AI-generated surfaces, part of the page (never a modal). The user can hide
+ * it (it shrinks to a one-line bar and opens again when new results arrive), minimize or close
+ * each surface, or clear everything.
+ */
 export function PlaygroundCanvas({
   surfaces,
   onSubmitForm,
+  onRemove,
+  onClear,
 }: {
   surfaces: UiSurface[];
   onSubmitForm?: SubmitFormHandler;
+  onRemove?: (index: number) => void;
+  onClear?: () => void;
 }) {
+  const [hidden, setHidden] = useState(false);
+  const [minimized, setMinimized] = useState<Set<string>>(new Set());
+  const [seen, setSeen] = useState(surfaces);
+  // New results show the canvas again (adjusting state while rendering, React's pattern for props).
+  if (seen !== surfaces) {
+    setSeen(surfaces);
+    if (surfaces.length > seen.length) setHidden(false);
+  }
+  const keyOf = (surface: UiSurface, index: number) => surface.id ?? `#${index}`;
+  const toggleMinimized = (key: string) =>
+    setMinimized((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   return (
-    <div className="rounded-md border p-3 md:col-span-2" data-testid="playground-canvas">
-      <p className="text-xs font-medium text-muted-foreground">Playground</p>
-      {surfaces.length === 0 ? (
-        <p className="mt-2 text-sm text-muted-foreground">
-          Ask for a table, chart, comparison or details — e.g. &quot;chart my payments by month&quot;.
+    <section className="rounded-xl border bg-card shadow-sm" data-testid="playground-canvas" aria-label="Assistant results">
+      <header className="flex items-center gap-2 border-b px-4 py-2.5">
+        <h2 className="text-sm font-semibold">Assistant results</h2>
+        {surfaces.length > 0 && (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{surfaces.length}</span>
+        )}
+        <div className="ml-auto flex items-center gap-1">
+          {surfaces.length > 0 && onClear && (
+            <button type="button" onClick={onClear} className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted">
+              Clear
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setHidden((h) => !h)}
+            aria-expanded={!hidden}
+            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+          >
+            {hidden ? "Show results" : "Hide results"}
+          </button>
+        </div>
+      </header>
+      {hidden ? null : surfaces.length === 0 ? (
+        <p className="px-4 py-6 text-sm text-muted-foreground">
+          Tables, charts and comparisons the assistant makes appear here — try &quot;compare last 3 months
+          payments&quot; or &quot;chart my payments by month&quot;.
         </p>
       ) : (
-        <div className="mt-2 space-y-4">
-          {surfaces.map((surface, index) => (
-            <section key={surface.id ?? index} data-testid="playground-surface" data-kind={surface.kind}>
-              {surface.title && <p className="mb-1 text-sm font-medium">{surface.title}</p>}
-              <SurfaceView surface={surface} onSubmitForm={onSubmitForm} />
-            </section>
-          ))}
+        <div className="space-y-3 p-4">
+          {surfaces.map((surface, index) => {
+            const key = keyOf(surface, index);
+            const isMin = minimized.has(key);
+            return (
+              <section
+                key={key}
+                data-testid="playground-surface"
+                data-kind={surface.kind}
+                className="relay-panel-enter rounded-lg border"
+              >
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium">{surface.title ?? surface.kind}</p>
+                  <button
+                    type="button"
+                    onClick={() => toggleMinimized(key)}
+                    aria-label={isMin ? "Expand" : "Minimize"}
+                    title={isMin ? "Expand" : "Minimize"}
+                    className="rounded px-1.5 text-muted-foreground hover:bg-muted"
+                  >
+                    {isMin ? "▸" : "▾"}
+                  </button>
+                  {onRemove && (
+                    <button
+                      type="button"
+                      onClick={() => onRemove(index)}
+                      aria-label="Close"
+                      title="Close"
+                      className="rounded px-1.5 text-muted-foreground hover:bg-muted"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                {!isMin && (
+                  <div className="border-t px-3 py-3">
+                    <SurfaceView surface={surface} onSubmitForm={onSubmitForm} />
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       )}
-    </div>
+    </section>
   );
 }
