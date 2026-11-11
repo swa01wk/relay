@@ -24,6 +24,25 @@ export type Example = {
 
 export const examples: Example[] = [
   {
+    slug: "storefront",
+    name: "Oakline store",
+    industry: "Ecommerce",
+    tagline: "Shop by asking. Cart, checkout and returns by voice.",
+    description:
+      "An online store with a catalog, product pages, cart, checkout, orders and a wishlist. The assistant finds and compares products, filters the catalog, fills the checkout form from what you say, and proposes cart changes, orders, cancellations and returns for you to approve.",
+    url: process.env.NEXT_PUBLIC_EXAMPLE_STOREFRONT_URL ?? "http://localhost:3004",
+    prompts: [
+      "Show me noise-cancelling headphones under $200",
+      "Compare the Aurora Wireless Headphones and the Echo Buds Pro",
+      "Add two Pulse Mini Speakers to my cart and apply WELCOME10",
+      "Check out with express shipping to 500 Market St, San Francisco, CA 94105",
+      "Where is my latest order? Can I still cancel it?",
+      "Start a return for my Echo Buds — they arrived damaged",
+    ],
+    highlights: ["Catalog filters on screen", "Checkout form filled by voice", "Approved cart and order changes", "Per-shopper data"],
+    modes: ["voice", "text"],
+  },
+  {
     slug: "sales-crm",
     name: "Sales CRM",
     industry: "Sales",

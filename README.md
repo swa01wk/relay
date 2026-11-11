@@ -29,7 +29,7 @@ plans/                    PRD phases, status, decisions, UAT scripts
 
 ## Quick start
 
-**Ports:** gateway `8080` · mortgage tools `8090` · CRM tools `8091` · mortgage UI `3000` · CRM UI `3002`.
+**Ports:** gateway `8080` · mortgage tools `8090` · CRM tools `8091` · store API `8092` · mortgage UI `3000` · CRM UI `3002` · website `3003` · storefront `3004`.
 
 ```bash
 # 1. Server: gateway + Postgres + Redis + example tools services
@@ -78,6 +78,6 @@ Server variables go in `infra/docker/.env` (copy from [`.env.example`](./infra/d
 | `DEEPGRAM_API_KEY` | Speech-to-text and text-to-speech |
 | `RELAY_AGENTS_DIR` | Agent manifests folder (Compose mounts `agents/` at `/app/agents`) |
 
-Compose also sets `RELAY_DATABASE_URL`, `RELAY_REDIS_URL`, `RELAY_MORTGAGE_TOOLS_URL` and `RELAY_CRM_TOOLS_URL` for the gateway.
+Compose also sets `RELAY_DATABASE_URL`, `RELAY_REDIS_URL`, `RELAY_MORTGAGE_TOOLS_URL`, `RELAY_CRM_TOOLS_URL` and `RELAY_SHOP_TOOLS_URL` for the gateway.
 
 Frontends (`.env.local` in each app): `NEXT_PUBLIC_GATEWAY_URL` (default `http://localhost:8080`), `NEXT_PUBLIC_PROJECT_ID`, `NEXT_PUBLIC_AGENT_ID` (`sales-crm` for the CRM). The CRM app also reads `CRM_TOOLS_URL` (default `http://localhost:8091`) server-side.

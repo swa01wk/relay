@@ -60,12 +60,14 @@ export function sandboxIdFrom(cookieHeaderOrValue: string | null | undefined): s
   return value && ID.test(value) ? value : null
 }
 
-function newSandboxId(): string {
+/** A fresh random sandbox id (`sandbox_<32 hex>`). */
+export function newSandboxId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   return "sandbox_" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
 }
 
-function cookie(id: string, request: Request): string {
+/** The `Set-Cookie` value for a sandbox id (attributes depend on HTTP vs HTTPS, see below). */
+export function sandboxCookie(id: string, request: Request): string {
   const https = new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto") === "https"
   // Over HTTPS the demo may be framed by the marketing site on another site: a partitioned
   // SameSite=None cookie works there. On http://localhost both are the same site, so Lax is enough.
@@ -126,7 +128,7 @@ export function createSandbox(config: SandboxConfig): Sandbox {
       }
       const body = (await response.json()) as { session_id: string; token: string }
       // Only the session id and its short-lived token reach the browser.
-      return json({ sessionId: body.session_id, token: body.token }, 200, existing ? {} : { "set-cookie": cookie(id, request) })
+      return json({ sessionId: body.session_id, token: body.token }, 200, existing ? {} : { "set-cookie": sandboxCookie(id, request) })
     },
 
     async reset(request) {

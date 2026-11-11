@@ -1,0 +1,55 @@
+# Oakline storefront assistant — a declarative Relay agent (no Python).
+# Loaded by the gateway at startup from $RELAY_AGENTS_DIR. The storefront connects with agentId "storefront".
+agent_id: storefront
+
+# Tools service: GET /tools (discovery) and POST /tools/{name}. Env vars expand: ${VAR:-default}.
+tools_url: ${RELAY_SHOP_TOOLS_URL:-http://localhost:8092}
+
+system_prompt_file: storefront.prompt.md
+
+instructions: >
+  Good fits: several products → cards (name, price, rating, stock) or a table when the shopper wants to sort;
+  two to four products → comparison; one order → kv with its status and totals plus a line-items table;
+  spending over time → bar or line chart; checkout → a form bound to place_order, prefilled from the shopper's
+  default address; a return or review → a form bound to request_return / write_review. Prefer the store's own
+  screens (FILTER_PRODUCTS, OPEN_PRODUCT, OPEN_ORDER, navigation) over drawing a duplicate list.
+
+tool_timeout_seconds: 30
+
+# Words speech recognition should listen for (max 100, 50 chars each).
+keyterms:
+  - Oakline
+  - Aurora Wireless Headphones
+  - Pulse Mini Speaker
+  - Echo Buds Pro
+  - Studio Monitor Pair
+  - Summit Standing Desk
+  - Ergo Mesh Chair
+  - Lumen Desk Lamp
+  - Monitor Arm Duo
+  - Mechanical Keyboard
+  - Pour-Over Coffee Set
+  - Cast Iron Skillet
+  - Smart Kettle
+  - Espresso Grinder
+  - Trail Daypack
+  - Ultralight Tent
+  - Insulated Bottle
+  - Down Sleeping Bag
+  - Cork Yoga Mat
+  - Aroma Diffuser
+  - Massage Gun
+  - Weighted Blanket
+  - Wireless Charging Stand
+  - Canvas Tote Weekender
+  - Sonora
+  - Northpeak
+  - Hearth & Co
+  - Fieldwork
+  - Calma
+  - WELCOME10
+  - SAVE20
+  - FREESHIP
+  - wishlist
+  - checkout
+  - express shipping

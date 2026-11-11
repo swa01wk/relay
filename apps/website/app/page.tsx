@@ -254,7 +254,7 @@ function UseCases() {
             All examples <ArrowRightIcon className="size-4" />
           </Link>
         </div>
-        <div className="mt-12 grid gap-4 md:grid-cols-2">
+        <div className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {examples.map((e) => (
             <Link
               key={e.slug}

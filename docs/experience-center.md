@@ -22,6 +22,9 @@ browser ──POST /api/assistant/session──▶ example app's server ──PO
    signature). The tools service keeps one dataset per sandbox id:
    - CRM: one SQLite file per sandbox in `CRM_SANDBOX_DIR`, copied from the seed on first use.
    - Mortgage: an in-memory copy of the seed per sandbox (`MORTGAGE_SANDBOXES=1`).
+   - Storefront: one SQLite file per sandbox in `SHOP_SANDBOX_DIR`. The store already has per-shopper
+     data, so the sandbox id simply *is* the shopper: `proxy.ts` sets the cookie before the first page
+     renders, and the store's own API receives it as `X-Shop-User`.
    Sandboxes idle for 2 h are deleted, and each service keeps at most 500
    (`CRM_SANDBOX_TTL_SECONDS` / `CRM_SANDBOX_MAX`, `MORTGAGE_SANDBOX_TTL_SECONDS` / `MORTGAGE_SANDBOX_MAX`).
 4. **Reset demo** in the app calls `POST /api/sandbox/reset`, which calls the tools service's
@@ -33,10 +36,11 @@ mode is off.
 ## Run it locally
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml up -d --build gateway crm-tools mortgage-tools
+docker compose -f infra/docker/docker-compose.yml up -d --build gateway crm-tools mortgage-tools shop-tools
 pnpm install
 pnpm --filter @relay/crm-frontend dev:sandbox        # :3002, sandbox mode, framable by :3003
 pnpm --filter @relay/mortgage-frontend dev:sandbox   # :3000
+pnpm --filter @relay/storefront-frontend dev:sandbox # :3004
 pnpm --filter @relay/website dev                     # http://localhost:3003 → Experience Center
 ```
 
@@ -52,8 +56,8 @@ Locally the example apps use dev sessions (`RELAY_DEV_SESSIONS=1`, which accept 
 | example app | `RELAY_GATEWAY_URL` | Gateway as the app's server reaches it (defaults to `NEXT_PUBLIC_GATEWAY_URL`) |
 | example app | `RELAY_SANDBOX_FRAME_ANCESTORS` | Origins allowed to frame the app (`frame-ancestors`), e.g. the website's origin |
 | example app | `CRM_TOOLS_URL` / `MORTGAGE_TOOLS_URL` | Tools service, for reset (and the CRM dashboard) |
-| tools service | `CRM_SANDBOX_DIR` / `MORTGAGE_SANDBOXES=1` | Turns per-visitor data on |
-| website | `NEXT_PUBLIC_EXAMPLE_SALES_CRM_URL`, `NEXT_PUBLIC_EXAMPLE_MORTGAGE_URL` | Where each example runs |
+| tools service | `CRM_SANDBOX_DIR` / `MORTGAGE_SANDBOXES=1` / `SHOP_SANDBOX_DIR` | Turns per-visitor data on |
+| website | `NEXT_PUBLIC_EXAMPLE_SALES_CRM_URL`, `NEXT_PUBLIC_EXAMPLE_MORTGAGE_URL`, `NEXT_PUBLIC_EXAMPLE_STOREFRONT_URL` | Where each example runs |
 
 Abuse and cost limits: the example's server allows 20 session starts per address per 10 minutes
 (behind a proxy it reads `X-Forwarded-For`, so put it behind one that sets that header); the gateway
@@ -79,4 +83,9 @@ which works because all localhost ports count as one site.
    header to `next.config.ts`, and a `dev:sandbox` script.
 4. Website: add an entry to `apps/website/lib/examples.ts` with its own
    `NEXT_PUBLIC_EXAMPLE_<NAME>_URL`. The gallery, sandbox page and home page pick it up.
-5. Add the tools service to `services/gateway/tests/test_example_sandboxes.py`.
+5. Add the tools service to `services/gateway/tests/test_example_sandboxes.py` (or its own test file,
+   like `test_storefront_tools.py`).
+
+An app with per-user data (like the storefront) can skip the cookie-on-first-session step: set the
+cookie in `proxy.ts` (`newSandboxId` + `sandboxCookie` from `@relay/example-sandbox`) and use the
+sandbox id as the signed-in user everywhere.

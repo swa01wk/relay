@@ -82,6 +82,14 @@ Key rules for code that integrates Relay:
 - [examples/mortgage-servicing/agent/src/relay_mortgage_agent/agent.py](examples/mortgage-servicing/agent/src/relay_mortgage_agent/agent.py): custom agent — deterministic routes, draft/approval/commit flow, falling back to `ToolUsingAgent` for open questions
 - [examples/mortgage-servicing/agent/src/relay_mortgage_agent/tool_definitions.py](examples/mortgage-servicing/agent/src/relay_mortgage_agent/tool_definitions.py): how a domain registers its tools
 
+## Example: Oakline storefront (ecommerce, per-user data)
+
+- [examples/storefront/README.md](examples/storefront/README.md): catalog, cart, coupons, checkout, orders (cancel, re-address, return), wishlist, reviews; how the parts fit
+- [examples/storefront/relay-tools.md](examples/storefront/relay-tools.md): the inventory → 35 tools (21 read, 14 side-effecting), 7 screen actions, coverage table and 28 test questions
+- [examples/storefront/tools/src/shop_api/logic.py](examples/storefront/tools/src/shop_api/logic.py): every store rule once, used by both the store API (`/api/…`, `X-Shop-User`) and the Relay tools (`X-Relay-User`; per-shopper tools answer 401 without it); [tools.py](examples/storefront/tools/src/shop_api/tools.py) is the tool table
+- [examples/storefront/frontend](examples/storefront/frontend): Next.js 16 on :3004 — sessions started on the server for the shopper ([lib/session.ts](examples/storefront/frontend/lib/session.ts)), results canvas with Hide/minimize/close/Clear ([results-canvas.tsx](examples/storefront/frontend/components/relay/results-canvas.tsx)), `registerFormFill` merged into canvas forms, store-wide screen actions ([store-actions.tsx](examples/storefront/frontend/components/shop/store-actions.tsx)), native-input checkout form the assistant fills via `registerPageForms`
+- [agents/storefront.yaml](agents/storefront.yaml): manifest, prompt and voice keyterms
+
 ## Website and Experience Center
 
 - [apps/website](apps/website): marketing site + Experience Center (`/try`, Next.js 16, :3003); the example gallery comes only from [lib/examples.ts](apps/website/lib/examples.ts)
@@ -89,7 +97,7 @@ Key rules for code that integrates Relay:
 
 ## Running it
 
-- [README.md](README.md): repository layout, Docker Compose quick start (gateway :8080, mortgage tools :8090, CRM tools :8091, mortgage UI :3000, CRM UI :3002), test commands
+- [README.md](README.md): repository layout, Docker Compose quick start (gateway :8080, mortgage tools :8090, CRM tools :8091, store API :8092, mortgage UI :3000, CRM UI :3002, website :3003, storefront :3004), test commands
 - [packages/web-sdk/docs/03-reference.md](packages/web-sdk/docs/03-reference.md): customer-facing reference — endpoints an app uses, events, error codes, surface specs
 - [docs/operating-the-gateway.md](docs/operating-the-gateway.md): operator guide — every **configuration variable** (with defaults), `/admin`, `/metrics`, observability, gateway-wide and custom Python agents
 - [agents/README.md](agents/README.md): agent manifest format

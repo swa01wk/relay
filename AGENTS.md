@@ -18,6 +18,7 @@ Relay is a domain-agnostic platform for realtime voice + text AI assistants that
 | `services/gateway/` | FastAPI app in three layers — `controllers/` (HTTP + WebSocket), `services/` (logic, incl. the agent manifest loader `agent_service.py`), `repositories/` (stores) — wired in `core/container.py` | Python |
 | `agents/` | Declarative agents (`*.yaml` + prompt files), mounted into the gateway | YAML |
 | `examples/sales-crm/` | **Primary reference**: `frontend/` (Next.js 16 + shadcn), `tools/` (tools service) — agent is `agents/sales-crm.yaml` | TS / Python |
+| `examples/storefront/` | Ecommerce example (Oakline): `frontend/` (Next.js 16 + shadcn, :3004), `tools/` (store API + 35 tools, :8092) — agent is `agents/storefront.yaml`; per-shopper data via `X-Relay-User`; inventory in `relay-tools.md` | TS / Python |
 | `examples/shared/sandbox/` | `@relay/example-sandbox` — Experience Center helpers for example apps' servers (per-visitor session + reset) | TypeScript |
 | `apps/website/` | Marketing site + Experience Center (`/try`, iframes the examples in sandbox mode); gallery from `lib/examples.ts` — see [docs/experience-center.md](docs/experience-center.md) | TS |
 | `examples/mortgage-servicing/` | Custom Python agent example (deterministic routes, approve → commit → verify) | TS / Python |
@@ -29,10 +30,11 @@ Relay is a domain-agnostic platform for realtime voice + text AI assistants that
 
 ```bash
 cp infra/docker/.env.example infra/docker/.env        # set OPENAI_API_KEY (+ DEEPGRAM_API_KEY for voice)
-docker compose -f infra/docker/docker-compose.yml up -d --build   # gateway :8080, postgres, redis, mortgage-tools :8090, crm-tools :8091
+docker compose -f infra/docker/docker-compose.yml up -d --build   # gateway :8080, postgres, redis, mortgage-tools :8090, crm-tools :8091, shop-tools :8092
 pnpm install
 pnpm --filter @relay/crm-frontend dev                 # http://localhost:3002
 pnpm --filter @relay/mortgage-frontend dev            # http://localhost:3000
+pnpm --filter @relay/storefront-frontend dev          # http://localhost:3004
 ```
 
 - Python code runs inside the images: after changing `runtime/`, `adapters/`, `services/gateway/` or `examples/*/tools`, rebuild (`up -d --build <service>`).
@@ -49,7 +51,7 @@ pip install -e "packages/protocol[dev]" -e packages/python-sdk -e runtime \
   -e adapters/realtime/pipecat -e adapters/models/openai -e adapters/agents/reference -e adapters/tools/http \
   -e adapters/persistence/postgres -e adapters/persistence/redis -e adapters/speech/silero -e adapters/speech/deepgram \
   -e adapters/observability/prometheus -e adapters/observability/otel \
-  -e examples/mortgage-servicing/tools -e examples/mortgage-servicing/agent -e examples/sales-crm/tools \
+  -e examples/mortgage-servicing/tools -e examples/mortgage-servicing/agent -e examples/sales-crm/tools -e examples/storefront/tools \
   -e "services/gateway[dev]"
 ```
 
@@ -58,15 +60,17 @@ pip install -e "packages/protocol[dev]" -e packages/python-sdk -e runtime \
 ```bash
 pytest runtime/tests/test_<area>.py -q                 # e.g. test_client_actions, test_model_proposed_actions, test_generative_ui
 pytest services/gateway/tests/test_agent_manifests.py -q
+pytest services/gateway/tests/test_storefront_tools.py services/gateway/tests/test_example_sandboxes.py -q   # example tools services
 pnpm --filter @sumukhj1219-wkt-org/relay-web-sdk test && (cd packages/web-sdk && npx tsc --noEmit)
 pnpm --filter @sumukhj1219-wkt-org/relay-cli test
 (cd examples/sales-crm/frontend && pnpm exec tsc --noEmit -p . && pnpm exec eslint .)
+(cd examples/storefront/frontend && pnpm exec tsc --noEmit -p . && pnpm exec eslint .)
 ```
 
 - Full Python suite (~30 s): `pytest packages/protocol/tests runtime/tests services/gateway/tests adapters/realtime/pipecat/tests adapters/speech/deepgram/tests adapters/observability -q`. Run it before finishing a large change, not after every edit.
 - Do not start Playwright suites unless asked (slow; needs the full stack).
 - Test the agent loop with a scripted `ModelProvider` (yield `{"type": "tool_calls", ...}` / `{"type": "token", ...}`), never the real API. Examples: `runtime/tests/test_model_proposed_actions.py`, `runtime/tests/test_client_actions.py`.
-- Gateway tests start with empty rate-limit counters (autouse fixture in `conftest.py`); a test that needs many sign-ups from one address must expect `429` or reuse one `relay login` start. Gateway tests for the customer path use the `tenant_world` fixture (`conftest.py`): in-process fakes for customers' tools services and the model API. Gateway tests set `RELAY_DEV_SESSIONS=1`, `RELAY_AGENTS_DIR` to a non-existent folder and `CRM_DB_PATH` to a temp file (`services/gateway/tests/conftest.py`) so startup never calls real tools services and tests never write a `crm.db` into the repo.
+- Gateway tests start with empty rate-limit counters (autouse fixture in `conftest.py`); a test that needs many sign-ups from one address must expect `429` or reuse one `relay login` start. Gateway tests for the customer path use the `tenant_world` fixture (`conftest.py`): in-process fakes for customers' tools services and the model API. Gateway tests set `RELAY_DEV_SESSIONS=1`, `RELAY_AGENTS_DIR` to a non-existent folder and `CRM_DB_PATH` / `SHOP_DB_PATH` to temp files (`services/gateway/tests/conftest.py`) so startup never calls real tools services and tests never write a `crm.db` / `shop.db` into the repo.
 
 ## Architecture rules (CI and reviews enforce these)
 

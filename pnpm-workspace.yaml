@@ -3,5 +3,6 @@ packages:
   - "packages/cli"
   - "examples/mortgage-servicing/frontend"
   - "examples/sales-crm/frontend"
+  - "examples/storefront/frontend"
   - "examples/shared/*"
   - "apps/*"

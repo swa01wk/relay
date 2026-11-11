@@ -22,7 +22,7 @@ export default function TryPage() {
           Every sandbox is yours alone: changes you make are private, can be reset at any time, and disappear after two
           hours. Voice needs microphone permission; text works everywhere.
         </p>
-        <div className="mt-12 grid gap-4 md:grid-cols-2">
+        <div className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {examples.map((e) => (
             <Link
               key={e.slug}

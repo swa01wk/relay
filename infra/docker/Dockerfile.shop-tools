@@ -1,0 +1,13 @@
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY examples/storefront/tools /app/examples/storefront/tools
+
+RUN pip install --no-cache-dir -e /app/examples/storefront/tools
+
+ENV SHOP_TOOLS_PORT=8092
+EXPOSE 8092
+CMD ["shop-tools-api"]
