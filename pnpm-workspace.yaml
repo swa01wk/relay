@@ -4,5 +4,6 @@ packages:
   - "examples/mortgage-servicing/frontend"
   - "examples/sales-crm/frontend"
   - "examples/storefront/frontend"
+  - "examples/bus-booking/frontend"
   - "examples/shared/*"
   - "apps/*"

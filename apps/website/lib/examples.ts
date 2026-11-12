@@ -43,6 +43,25 @@ export const examples: Example[] = [
     modes: ["voice", "text"],
   },
   {
+    slug: "bus-booking",
+    name: "Wayline bus tickets",
+    industry: "Travel",
+    tagline: "Find the bus, pick the berth, book — by talking.",
+    description:
+      "An intercity bus booking site with search, filters, a fare calendar, a two-deck seat map, boarding points, passenger details and a trips page. The assistant searches and filters buses, selects seats and boarding points on the seat map, fills passenger details from your saved travellers, and proposes bookings, cancellations and reschedules for you to approve.",
+    url: process.env.NEXT_PUBLIC_EXAMPLE_BUS_BOOKING_URL ?? "http://localhost:3005",
+    prompts: [
+      "AC sleeper buses from Bangalore to Hyderabad tomorrow night",
+      "Which day next week is cheapest to Chennai?",
+      "Open the cheapest one and pick two lower berths together, boarding at Silk Board",
+      "Fill in me and Rahul as passengers and use WAYLINE10",
+      "When does my next bus leave, and from where?",
+      "What would it cost to cancel my Mysuru trip? Then move it to next Friday instead",
+    ],
+    highlights: ["Seat map driven by voice", "Search filters on screen", "Passenger form filled from saved travellers", "Approved bookings and cancellations"],
+    modes: ["voice", "text"],
+  },
+  {
     slug: "sales-crm",
     name: "Sales CRM",
     industry: "Sales",

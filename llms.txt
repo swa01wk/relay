@@ -90,6 +90,14 @@ Key rules for code that integrates Relay:
 - [examples/storefront/frontend](examples/storefront/frontend): Next.js 16 on :3004 — sessions started on the server for the shopper ([lib/session.ts](examples/storefront/frontend/lib/session.ts)), results canvas with Hide/minimize/close/Clear ([results-canvas.tsx](examples/storefront/frontend/components/relay/results-canvas.tsx)), `registerFormFill` merged into canvas forms, store-wide screen actions ([store-actions.tsx](examples/storefront/frontend/components/shop/store-actions.tsx)), native-input checkout form the assistant fills via `registerPageForms`
 - [agents/storefront.yaml](agents/storefront.yaml): manifest, prompt and voice keyterms
 
+## Example: Wayline bus booking (travel, per-user data, seat map)
+
+- [examples/bus-booking/README.md](examples/bus-booking/README.md): search with filters and a fare calendar, two-deck seat map with the women-only seat rule, boarding points, passenger details, offers, bookings (cancel some seats, reschedule, change points, rate); how the parts fit
+- [examples/bus-booking/relay-tools.md](examples/bus-booking/relay-tools.md): the inventory → 32 tools (25 read, 7 side-effecting), 5 screen actions, coverage table and 26 test questions
+- [examples/bus-booking/tools/src/bus_api/logic.py](examples/bus-booking/tools/src/bus_api/logic.py): every booking rule once (seats, fares, GST, coupons, cancellation tiers, rescheduling), used by both the booking API (`/api/…`, `X-Bus-User`) and the Relay tools (`X-Relay-User`)
+- [examples/bus-booking/frontend](examples/bus-booking/frontend): Next.js 16 on :3005 — the seat map's `SELECT_SEATS` action ([components/bus/seat-picker.tsx](examples/bus-booking/frontend/components/bus/seat-picker.tsx)), `SEARCH_BUSES` / `OPEN_TRIP` / `OPEN_BOOKING` / `FILTER_BOOKINGS` ([components/bus/bus-actions.tsx](examples/bus-booking/frontend/components/bus/bus-actions.tsx)), a Passenger details page form named like `book_tickets`
+- [agents/bus-booking.yaml](agents/bus-booking.yaml): manifest, prompt and voice keyterms (cities, boarding points, operators)
+
 ## Website and Experience Center
 
 - [apps/website](apps/website): marketing site + Experience Center (`/try`, Next.js 16, :3003); the example gallery comes only from [lib/examples.ts](apps/website/lib/examples.ts)
@@ -97,7 +105,7 @@ Key rules for code that integrates Relay:
 
 ## Running it
 
-- [README.md](README.md): repository layout, Docker Compose quick start (gateway :8080, mortgage tools :8090, CRM tools :8091, store API :8092, mortgage UI :3000, CRM UI :3002, website :3003, storefront :3004), test commands
+- [README.md](README.md): repository layout, Docker Compose quick start (gateway :8080, mortgage tools :8090, CRM tools :8091, store API :8092, bus booking API :8093, mortgage UI :3000, CRM UI :3002, website :3003, storefront :3004, bus booking :3005), test commands
 - [packages/web-sdk/docs/03-reference.md](packages/web-sdk/docs/03-reference.md): customer-facing reference — endpoints an app uses, events, error codes, surface specs
 - [docs/operating-the-gateway.md](docs/operating-the-gateway.md): operator guide — every **configuration variable** (with defaults), `/admin`, `/metrics`, observability, gateway-wide and custom Python agents
 - [agents/README.md](agents/README.md): agent manifest format

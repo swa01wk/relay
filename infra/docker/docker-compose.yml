@@ -81,6 +81,25 @@ services:
       timeout: 5s
       retries: 5
 
+  bus-tools:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.bus-tools
+    ports:
+      - "8093:8093"
+    # Bookings (SQLite) survive restarts and `down`; `down -v` resets them to the demo data.
+    # Experience Center: sessions for a `sandbox_…` user get their own data under /data/sandboxes.
+    environment:
+      BUS_DB_PATH: /data/bus.db
+      BUS_SANDBOX_DIR: /data/sandboxes
+    volumes:
+      - bus-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   gateway:
     build:
       context: ../..
@@ -99,6 +118,7 @@ services:
       RELAY_MORTGAGE_TOOLS_URL: "http://mortgage-tools:8090"
       RELAY_CRM_TOOLS_URL: "http://crm-tools:8091"
       RELAY_SHOP_TOOLS_URL: "http://shop-tools:8092"
+      RELAY_BUS_TOOLS_URL: "http://bus-tools:8093"
       RELAY_AGENTS_DIR: /app/agents
       # Encrypts customers' model keys at rest. The fallback is a public, dev-only value:
       # set a long random RELAY_SECRETS_KEY in .env for anything real, and never change it
@@ -129,6 +149,8 @@ services:
         condition: service_healthy
       shop-tools:
         condition: service_healthy
+      bus-tools:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
@@ -140,3 +162,4 @@ volumes:
   relay-pg-data:
   crm-data:
   shop-data:
+  bus-data:

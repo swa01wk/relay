@@ -17,6 +17,7 @@ os.environ.setdefault("RELAY_EMAIL_VERIFICATION", "off")
 # CRM tools write to SQLite; tests must never touch a real database file.
 os.environ["CRM_DB_PATH"] = os.path.join(tempfile.mkdtemp(prefix="relay-crm-test-"), "crm.db")
 os.environ["SHOP_DB_PATH"] = os.path.join(tempfile.mkdtemp(prefix="relay-shop-test-"), "shop.db")
+os.environ["BUS_DB_PATH"] = os.path.join(tempfile.mkdtemp(prefix="relay-bus-test-"), "bus.db")
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
