@@ -1,0 +1,72 @@
+# Roostly vacation rental assistant — a declarative Relay agent (no Python).
+# Loaded by the gateway at startup from $RELAY_AGENTS_DIR. The rental site connects with agentId "stays".
+agent_id: stays
+
+# Tools service: GET /tools (discovery) and POST /tools/{name}. Env vars expand: ${VAR:-default}.
+tools_url: ${RELAY_STAYS_TOOLS_URL:-http://localhost:8094}
+
+system_prompt_file: stays.prompt.md
+
+instructions: >
+  Good fits: homes for a place and dates → the site's own search page (SEARCH_STAYS) rather than a drawn list;
+  two to four homes → comparison; a price for a stay → kv with nights, fees, discount, GST and total; prices by
+  destination or type → bar chart from aggregate_listings; one trip → kv with dates, guests, code, amount paid and
+  refund now; spend over time → bar chart; booking → set the dates and guests on the home's own booking panel
+  (SET_STAY) and go to its Confirm and pay page (or a form bound to reserve_stay); review → a form bound to
+  write_review. Prefer the site's own screens (SEARCH_STAYS, OPEN_LISTING, SET_STAY, OPEN_TRIP, FILTER_TRIPS,
+  OPEN_WISHLIST, navigation) over duplicates.
+
+tool_timeout_seconds: 30
+
+# Words speech recognition should listen for (max 100, 50 chars each).
+keyterms:
+  - Roostly
+  - Goa
+  - Assagao
+  - Anjuna
+  - Palolem
+  - Manali
+  - Old Manali
+  - Vashisht
+  - Coorg
+  - Virajpet
+  - Udaipur
+  - Lake Pichola
+  - Jaipur
+  - Amer
+  - Alleppey
+  - Kumarakom
+  - Marari
+  - Rishikesh
+  - Tapovan
+  - Pondicherry
+  - White Town
+  - Auroville
+  - Ooty
+  - Coonoor
+  - Munnar
+  - Devikulam
+  - Bandra
+  - Colaba
+  - Juhu
+  - Indiranagar
+  - Koramangala
+  - Whitefield
+  - houseboat
+  - treehouse
+  - haveli
+  - homestay
+  - villa
+  - cottage
+  - superhost
+  - instant book
+  - wishlist
+  - check-in
+  - check-out
+  - Ananya
+  - Tenzin
+  - Kavya
+  - Vikram Singh
+  - Meenakshi
+  - Zara
+  - Lakshmi

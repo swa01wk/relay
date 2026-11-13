@@ -98,6 +98,14 @@ Key rules for code that integrates Relay:
 - [examples/bus-booking/frontend](examples/bus-booking/frontend): Next.js 16 on :3005 — the seat map's `SELECT_SEATS` action ([components/bus/seat-picker.tsx](examples/bus-booking/frontend/components/bus/seat-picker.tsx)), `SEARCH_BUSES` / `OPEN_TRIP` / `OPEN_BOOKING` / `FILTER_BOOKINGS` ([components/bus/bus-actions.tsx](examples/bus-booking/frontend/components/bus/bus-actions.tsx)), a Passenger details page form named like `book_tickets`
 - [agents/bus-booking.yaml](agents/bus-booking.yaml): manifest, prompt and voice keyterms (cities, boarding points, operators)
 
+## Example: Roostly vacation rentals (hospitality, per-user data, calendars)
+
+- [examples/stays/README.md](examples/stays/README.md): search by place, dates and guests; listing pages with an availability calendar and price breakdown; instant book vs. host requests; trips (messages, changes, cancellation policies, reviews); wishlists; how the parts fit
+- [examples/stays/relay-tools.md](examples/stays/relay-tools.md): the inventory → 31 tools (23 read, 8 side-effecting), 6 screen actions, coverage table and 26 test questions
+- [examples/stays/tools/src/stays_api/logic.py](examples/stays/tools/src/stays_api/logic.py): every rental rule once (availability, pricing, fees, GST, policies, changes), used by both the site API (`/api/…`, `X-Stays-User`) and the Relay tools (`X-Relay-User`)
+- [examples/stays/frontend](examples/stays/frontend): Next.js 16 on :3006 — the booking panel's `SET_STAY` action ([components/stays/booking-panel.tsx](examples/stays/frontend/components/stays/booking-panel.tsx)), `SEARCH_STAYS` / `OPEN_LISTING` / `OPEN_TRIP` / `FILTER_TRIPS` / `OPEN_WISHLIST` ([components/stays/stays-actions.tsx](examples/stays/frontend/components/stays/stays-actions.tsx)), a Confirm and pay page form named like `reserve_stay`
+- [agents/stays.yaml](agents/stays.yaml): manifest, prompt and voice keyterms (destinations, areas, property types, hosts)
+
 ## Website and Experience Center
 
 - [apps/website](apps/website): marketing site + Experience Center (`/try`, Next.js 16, :3003); the example gallery comes only from [lib/examples.ts](apps/website/lib/examples.ts)
@@ -105,7 +113,7 @@ Key rules for code that integrates Relay:
 
 ## Running it
 
-- [README.md](README.md): repository layout, Docker Compose quick start (gateway :8080, mortgage tools :8090, CRM tools :8091, store API :8092, bus booking API :8093, mortgage UI :3000, CRM UI :3002, website :3003, storefront :3004, bus booking :3005), test commands
+- [README.md](README.md): repository layout, Docker Compose quick start (gateway :8080, mortgage tools :8090, CRM tools :8091, store API :8092, bus booking API :8093, rentals API :8094, mortgage UI :3000, CRM UI :3002, website :3003, storefront :3004, bus booking :3005, rentals :3006), test commands
 - [packages/web-sdk/docs/03-reference.md](packages/web-sdk/docs/03-reference.md): customer-facing reference — endpoints an app uses, events, error codes, surface specs
 - [docs/operating-the-gateway.md](docs/operating-the-gateway.md): operator guide — every **configuration variable** (with defaults), `/admin`, `/metrics`, observability, gateway-wide and custom Python agents
 - [agents/README.md](agents/README.md): agent manifest format

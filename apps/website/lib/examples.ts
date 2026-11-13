@@ -62,6 +62,25 @@ export const examples: Example[] = [
     modes: ["voice", "text"],
   },
   {
+    slug: "stays",
+    name: "Roostly stays",
+    industry: "Hospitality",
+    tagline: "Find the place, check the dates, book — by asking.",
+    description:
+      "A vacation rental site with search by place, dates and guests, listing pages with an availability calendar and full price breakdown, instant book or request-to-book, trips with host messages, and wishlists. The assistant searches and filters homes, sets dates and guests on the booking panel, fills Confirm and pay, and proposes bookings, changes, cancellations and reviews for you to approve.",
+    url: process.env.NEXT_PUBLIC_EXAMPLE_STAYS_URL ?? "http://localhost:3006",
+    prompts: [
+      "A villa with a pool in Goa for 6 people, 20 to 23 December",
+      "Cosy cottages in the hills that allow dogs, under ₹7,000 a night",
+      "Compare the two Udaipur places on the lake",
+      "Book the Anjuna studio for two next weekend and tell the host we arrive around 4",
+      "When is my next trip, and how do I check in?",
+      "What would I get back if I cancel my Ooty trip?",
+    ],
+    highlights: ["Booking panel driven by voice", "Price breakdown with fees and GST", "Instant book or host requests", "Approved bookings, changes and reviews"],
+    modes: ["voice", "text"],
+  },
+  {
     slug: "sales-crm",
     name: "Sales CRM",
     industry: "Sales",
