@@ -9,11 +9,11 @@ Implementation status: **Phase 7 signed off** — see [STATUS.md](./STATUS.md). 
 | Layer | Component | Role |
 |-------|-----------|------|
 | Browser | WebRTC (`packages/web-sdk/src/webrtc-media.ts`) | Mic `sendrecv` transceiver → SRTP uplink; agent PCM downlink (Web Audio + `<audio>`) |
-| Browser | RP WebSocket (`@relay/web-sdk`) | Control + transcripts + `RESPONSE_*` / `SPEECH_*` (not audio) |
+| Browser | RP WebSocket (`@sumukhj1219-wkt-org/relay-web-sdk`) | Control + transcripts + `RESPONSE_*` / `SPEECH_*` (not audio) |
 | Browser | Mortgage UI mic meter | Local analyser only — if flat, fix OS mic permission before debugging STT |
 | Gateway | `PipecatSmallWebRtcTransport` | WebRTC + Pipecat **ingress** pipeline per `session_id`; `push_output_pcm` for agent audio |
 | Gateway | `webrtc_fixup.py` | Deferred mic bind ([D-003-004](./DECISIONS.md#d-003-004-smallwebrtc-mic-track-binding-race)); keep audio receiver on when idle ([D-003-005](./DECISIONS.md#d-003-005-smallwebrtc-audio-receiver-idle)) |
-| Gateway | `VoicePipelineHooks` → `SessionManager.notify_*` | VAD/STT callbacks into the session actor ([`deps.py`](../services/gateway/src/relay_gateway/deps.py)) |
+| Gateway | `VoicePipelineHooks` → `SessionManager.notify_*` | VAD/STT callbacks into the session actor ([`core/container.py`](../services/gateway/src/relay_gateway/core/container.py)) |
 | Media (ingress) | **Hybrid (default):** `VADProcessor` (Silero) → STT → `RelayUserTurnProcessor` (Smart Turn v3 stop) · **Legacy:** `RelayVadProcessor` when `RELAY_TURN_DETECTOR=silero` | VAD → fast `on_speech_started`; semantic stop → `on_speech_ended` |
 | Media (ingress) | `DeepgramSTTService` + `RelayTranscriptProcessor` | RP `TRANSCRIPT_DELTA` / `TRANSCRIPT_FINAL` |
 | Media (egress) | `AgentAudioOutputProcessor` | Queues agent PCM from runtime → SmallWebRTC out |

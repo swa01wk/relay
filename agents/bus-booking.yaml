@@ -1,0 +1,70 @@
+# Wayline bus booking assistant — a declarative Relay agent (no Python).
+# Loaded by the gateway at startup from $RELAY_AGENTS_DIR. The booking site connects with agentId "bus-booking".
+agent_id: bus-booking
+
+# Tools service: GET /tools (discovery) and POST /tools/{name}. Env vars expand: ${VAR:-default}.
+tools_url: ${RELAY_BUS_TOOLS_URL:-http://localhost:8093}
+
+system_prompt_file: bus-booking.prompt.md
+
+instructions: >
+  Good fits: buses for a route → the site's own search page (SEARCH_BUSES) rather than a drawn list; two to four
+  buses → comparison; fares across days → bar or line chart from get_fare_calendar; one booking → kv with PNR,
+  route, times, boarding point, seats and amount paid; a cancellation → kv with charge and refund before proposing
+  it; spend over time → bar chart; booking → a form bound to book_tickets prefilled from get_my_context and the
+  chosen seats and points (or fill the Passenger details page form on the checkout page). Prefer the site's own
+  screens (SEARCH_BUSES, OPEN_TRIP, SELECT_SEATS, OPEN_BOOKING, FILTER_BOOKINGS, navigation) over duplicates.
+
+tool_timeout_seconds: 30
+
+# Words speech recognition should listen for (max 100, 50 chars each).
+keyterms:
+  - Wayline
+  - Bengaluru
+  - Bangalore
+  - Chennai
+  - Hyderabad
+  - Mumbai
+  - Pune
+  - Goa
+  - Panaji
+  - Mysuru
+  - Coimbatore
+  - Kochi
+  - Mangaluru
+  - Vijayawada
+  - Madurai
+  - Majestic
+  - Silk Board
+  - Electronic City
+  - Shanthinagar
+  - Koyambedu
+  - Ameerpet
+  - Kukatpally
+  - Swargate
+  - Dadar
+  - Vyttila Hub
+  - Northstar Coaches
+  - Deccan Comfort
+  - Coastal Rider
+  - Moonlit Sleepers
+  - Konkan Breeze
+  - Tamarind Tours
+  - Bluebird Intercity
+  - Saffron Wheels
+  - sleeper
+  - semi-sleeper
+  - multi-axle
+  - lower berth
+  - upper berth
+  - window seat
+  - boarding point
+  - dropping point
+  - PNR
+  - reschedule
+  - WAYLINE10
+  - NIGHTOWL
+  - GROUP4
+  - FIRSTRIDE
+  - UPI
+  - wallet

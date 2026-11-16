@@ -78,7 +78,7 @@ Record **product and engineering choices** that phases depend on. Update when a 
 
 **Status:** Accepted · **Date:** 2026-09-24 · **Plan:** [phase-03](./phase-03-vad-stt-turn-manager.md)
 
-**Context:** STT can be implemented as a native `SpeechToTextProvider` (e.g. Deepgram WebSocket) or by wrapping Pipecat’s Deepgram live service inside `adapters/speech/` or `adapters/realtime/pipecat/`, as long as Pipecat types do not leak into `packages/protocol` or `@relay/web-sdk`.
+**Context:** STT can be implemented as a native `SpeechToTextProvider` (e.g. Deepgram WebSocket) or by wrapping Pipecat’s Deepgram live service inside `adapters/speech/` or `adapters/realtime/pipecat/`, as long as Pipecat types do not leak into `packages/protocol` or `@sumukhj1219-wkt-org/relay-web-sdk`.
 
 **Decision**
 
@@ -445,12 +445,12 @@ Record **product and engineering choices** that phases depend on. Update when a 
 
 **Status:** Accepted · **Date:** 2026-09-25 · **Plan:** [phase-11](./phase-11-hardening-uat.md) · **Related:** [UAT-002](./UAT_VOICE_SCRIPT.md#uat-002) · [D-011-002](#d-011-002-no-webrtc-nsaecagc-toggles-poc) · [VOICE_LIFECYCLE.md](./VOICE_LIFECYCLE.md)
 
-**Context:** Open-speaker and room noise caused false barge-in, agent TTS cutoffs, and garbled STT in voice UAT ([UAT-002](./UAT_VOICE_SCRIPT.md#uat-002)). A short-lived POC experiment exposed explicit WebRTC **`noiseSuppression`**, **`echoCancellation`**, and **`autoGainControl`** toggles in the mortgage shell and `@relay/web-sdk`; UAT on laptop speakers was worse (cutoffs, loopback). That path is **reverted** — see [D-011-002](#d-011-002-no-webrtc-nsaecagc-toggles-poc).
+**Context:** Open-speaker and room noise caused false barge-in, agent TTS cutoffs, and garbled STT in voice UAT ([UAT-002](./UAT_VOICE_SCRIPT.md#uat-002)). A short-lived POC experiment exposed explicit WebRTC **`noiseSuppression`**, **`echoCancellation`**, and **`autoGainControl`** toggles in the mortgage shell and `@sumukhj1219-wkt-org/relay-web-sdk`; UAT on laptop speakers was worse (cutoffs, loopback). That path is **reverted** — see [D-011-002](#d-011-002-no-webrtc-nsaecagc-toggles-poc).
 
 **Decision**
 
 - **Primary capture cleanup (target, not yet implemented):** Integrate **Krisp AI** on the **mic path** before audio is sent on SmallWebRTC (processed `MediaStream` or Krisp SDK hook).
-- **Placement:** Client-only — `examples/mortgage-servicing/frontend/` and **`@relay/web-sdk`** (`webrtc-media.ts` or a thin Krisp wrapper). **No** Krisp in `runtime/`, gateway, or Pipecat adapters for the POC.
+- **Placement:** Client-only — `examples/mortgage-servicing/frontend/` and **`@sumukhj1219-wkt-org/relay-web-sdk`** (`webrtc-media.ts` or a thin Krisp wrapper). **No** Krisp in `runtime/`, gateway, or Pipecat adapters for the POC.
 - **UI (when Krisp lands):** Single operator toggle (on by default for demo), e.g. “Noise cancellation (Krisp)”—**not** a revival of per-constraint NS/AEC/AGC checkboxes.
 - **Until Krisp ships:** `getUserMedia({ audio: true })` only; operators use **Mute mic** while the agent speaks or headphones ([D-003-001](#d-003-001-voice-turn-detection-vad--muteui)).
 
@@ -471,7 +471,7 @@ Record **product and engineering choices** that phases depend on. Update when a 
 
 **Decision**
 
-- **Do not ship** explicit NS/AEC/AGC toggles or SDK APIs for the POC. Removed from mortgage `page.tsx` and `@relay/web-sdk`.
+- **Do not ship** explicit NS/AEC/AGC toggles or SDK APIs for the POC. Removed from mortgage `page.tsx` and `@sumukhj1219-wkt-org/relay-web-sdk`.
 - **Mic capture:** `navigator.mediaDevices.getUserMedia({ audio: true, video: false })` — rely on **browser defaults** for whatever processing the OS applies; do not set `{ noiseSuppression, echoCancellation, autoGainControl }` in application code unless a future decision (e.g. Krisp or a vetted AEC strategy) requires it.
 - **Agent playback:** Remote TTS via a single **`<audio>`** element only (no parallel route to `AudioContext.destination`), to avoid extra speaker bleed.
 - **Barge-in during agent playout:** **VAD `speech_started` fast path only** — STT **partials must not** trigger barge-in (speaker bleed was cancelling TTS).

@@ -11,7 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from starlette.testclient import TestClient
 
 from relay_gateway.app import create_app
-from relay_gateway import deps
+from relay_gateway.core import container as deps
 
 pytest.importorskip("aiortc")
 

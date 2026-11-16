@@ -25,9 +25,26 @@ type IcePayload = {
   sdp_mline_index: number;
 };
 
+/**
+ * Clean microphone audio for speech recognition: the browser's echo cancellation (so the assistant's
+ * own voice from the speakers isn't transcribed), noise suppression and level control, mono.
+ */
+const MIC_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  channelCount: 1,
+};
+
+/** Used when the gateway does not hand out ICE servers (older gateways) and the app sets none. */
+const FALLBACK_ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+
 export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): SmallWebRtcSession {
   const baseUrl = options.gatewayUrl.replace(/\/$/, "");
-  const offerUrl = `${baseUrl}/sessions/${encodeURIComponent(options.sessionId)}/webrtc/offer?token=${encodeURIComponent(options.devToken)}`;
+  // The session token goes in a header, never the URL (URLs end up in proxy logs and history).
+  const offerUrl = `${baseUrl}/sessions/${encodeURIComponent(options.sessionId)}/webrtc/offer`;
+  const jsonHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${options.devToken}` };
+  const iceServersUrl = `${baseUrl}/sessions/${encodeURIComponent(options.sessionId)}/webrtc/ice-servers`;
 
   let connectionState: VoiceConnectionState = "disconnected";
   let pc: RTCPeerConnection | null = null;
@@ -58,6 +75,21 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
     return () => levelHandlers.delete(handler);
   };
 
+  /**
+   * The gateway's STUN/TURN servers for this session. TURN relays audio when a direct path is
+   * blocked (strict firewalls, mobile networks); its credentials expire, so fetch them per connect.
+   */
+  const gatewayIceServers = async (): Promise<RTCIceServer[]> => {
+    try {
+      const resp = await fetch(iceServersUrl, { headers: { Authorization: `Bearer ${options.devToken}` } });
+      if (!resp.ok) return FALLBACK_ICE_SERVERS;
+      const body = (await resp.json()) as { ice_servers?: RTCIceServer[] };
+      return Array.isArray(body.ice_servers) && body.ice_servers.length > 0 ? body.ice_servers : FALLBACK_ICE_SERVERS;
+    } catch {
+      return FALLBACK_ICE_SERVERS;
+    }
+  };
+
   const flushIce = async () => {
     if (!pcId || !canSendIce || iceQueue.length === 0) return;
     const candidates: IcePayload[] = iceQueue.splice(0, iceQueue.length).map((c) => ({
@@ -67,7 +99,7 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
     }));
     await fetch(offerUrl, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({ pc_id: pcId, candidates }),
     });
   };
@@ -80,7 +112,7 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
     }
     await fetch(offerUrl, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({
         pc_id: pcId,
         candidates: [
@@ -124,7 +156,6 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
     if (!remoteAudio) {
       remoteAudio = document.createElement("audio");
       remoteAudio.autoplay = true;
-      remoteAudio.playsInline = true;
       remoteAudio.setAttribute("playsinline", "true");
       document.body.appendChild(remoteAudio);
     }
@@ -146,14 +177,14 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
     iceQueue.length = 0;
 
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS, video: false });
       startLevelMeter(localStream);
       if (audioContext?.state === "suspended") {
         await audioContext.resume();
       }
 
       pc = new RTCPeerConnection({
-        iceServers: options.iceServers ?? [{ urls: "stun:stun.l.google.com:19302" }],
+        iceServers: options.iceServers ?? (await gatewayIceServers()),
       });
       for (const track of localStream.getAudioTracks()) {
         pc.addTransceiver(track, { direction: "sendrecv", streams: [localStream] });
@@ -182,7 +213,7 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
 
       const resp = await fetch(offerUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders,
         body: JSON.stringify({
           sdp: pc.localDescription?.sdp,
           type: pc.localDescription?.type,

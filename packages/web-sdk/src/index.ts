@@ -4,7 +4,43 @@ import {
   attachSmallWebRtcMedia,
   type SmallWebRtcSession,
   type VoiceConnectionState,
-} from "./webrtc-media";
+} from "./webrtc-media.js";
+
+export {
+  FILL_FORM_ACTION,
+  FORM_SUBMIT_EVENT,
+  PRESENT_UI_ACTION,
+  SHOW_TABLE_ACTION,
+  normalizeChartSurface,
+  normalizePresentUiParams,
+  normalizeTableSurface,
+  normalizeUiSurface,
+  registerFormFill,
+  registerPlaygroundSurfaces,
+  submitForm,
+  surfaceToCsv,
+} from "./ui-surfaces.js";
+export { NAVIGATE_ACTION, registerAutoNavigation } from "./navigation.js";
+export type { AutoNavigationOptions, NavigationPage } from "./navigation.js";
+export { PAGE_FORM_ACTION_PREFIX, registerPageForms } from "./page-forms.js";
+export type { PageFormsOptions } from "./page-forms.js";
+export type {
+  PresentUiParams,
+  UiCardsSurface,
+  UiChartSurface,
+  UiChartType,
+  UiComparisonSurface,
+  UiFormField,
+  UiFormFieldType,
+  UiFormFill,
+  UiFormSurface,
+  UiMarkdownSurface,
+  UiKeyValueSurface,
+  UiNoticeSurface,
+  UiSurface,
+  UiTableColumn,
+  UiTableSurface,
+} from "./ui-surfaces.js";
 
 export type RelayConnectionState = "disconnected" | "connecting" | "ready" | "error";
 
@@ -25,20 +61,43 @@ export type DevSessionResult = {
 
 export type RelaySessionOptions = {
   gatewayUrl: string;
-  projectId: string;
+  /**
+   * Project API key. In a browser use the project's publishable key (`rpk_…`, from
+   * `relay keys create --kind publishable`); never ship a secret key (`rsk_…`) to a browser.
+   * The key decides the project, so `projectId` is not needed.
+   */
+  apiKey?: string;
+  /** Only for local development without a key (gateway started with RELAY_DEV_SESSIONS=1). */
+  projectId?: string;
   agentId: string;
-  /** Use existing dev session instead of POST /dev/sessions */
+  /** Use an existing session instead of creating one */
   sessionId?: string;
   devToken?: string;
   /** Phase 2: attach SmallWebRTC after RP session is ready */
   transport?: RelayTransportMode;
+  /**
+   * STUN/TURN servers for voice. Leave unset to use the ones the gateway hands out for the session
+   * (including TURN, which relays audio through strict firewalls).
+   */
   iceServers?: RTCIceServer[];
 };
 
+/** Return an object to report it back to the agent (e.g. `{ rows_shown: 23 }`). Throw to fail. */
 export type ActionHandler = (
   params: Record<string, unknown>,
   ctx: { actionId: string; name: string },
-) => void | Promise<void>;
+) => void | Record<string, unknown> | Promise<void | Record<string, unknown>>;
+
+/** Describes an action so the agent can call it to change what the user sees. */
+export type ActionSpec = {
+  /** What the action does, written for the AI (e.g. "Filter the orders table on the dashboard"). */
+  description: string;
+  /** JSON Schema for the params: `{ type: "object", properties: {...}, required?: [...] }`. */
+  parameters?: Record<string, unknown>;
+};
+
+/** APP_EVENT that advertises spec'd actions to the agent. */
+export const CLIENT_CAPABILITIES_EVENT = "ui.capabilities";
 
 export type SendStateOptions = {
   /** Version the client read before this edit (defaults to last server version). */
@@ -66,7 +125,8 @@ export type RelaySession = {
   setMicMuted: (muted: boolean) => void;
   cancelVoiceUtterance: () => void;
   sendText: (text: string) => void;
-  registerAction: (name: string, handler: ActionHandler) => () => void;
+  /** With `spec`, the agent is told about the action and may call it ("change the screen"). */
+  registerAction: (name: string, handler: ActionHandler, spec?: ActionSpec) => () => void;
   sendState: (state: Record<string, unknown>, options?: SendStateOptions) => void;
   onStateConflict: (handler: (info: StateConflictInfo) => void) => () => void;
   sendEvent: (name: string, payload?: Record<string, unknown>) => void;
@@ -115,6 +175,61 @@ export async function createDevSession(
   };
 }
 
+/** Which of your app's users a session is for. Sent to your tools service on every call. */
+export type RelayEndUser = {
+  /** Your own id for the signed-in user. */
+  id: string;
+  /** Optional facts your tools need (role, organisation, …): strings, numbers or booleans. */
+  attributes?: Record<string, string | number | boolean>;
+};
+
+/**
+ * Start a session in the project the API key belongs to (`POST /v1/sessions`).
+ *
+ * `user` may only be set with a **secret** key, i.e. from your server after it has checked who
+ * is signed in; hand the returned `sessionId` and `devToken` to the browser
+ * (`createRelaySession({ sessionId, devToken, … })`).
+ */
+export async function createSession(
+  gatewayUrl: string,
+  params: { apiKey: string; agentId: string; user?: RelayEndUser },
+): Promise<DevSessionResult> {
+  const res = await fetch(`${gatewayUrl.replace(/\/$/, "")}/v1/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${params.apiKey}` },
+    body: JSON.stringify({ agent_id: params.agentId, ...(params.user ? { user: params.user } : {}) }),
+  });
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((body: { detail?: unknown }) => (typeof body.detail === "string" ? body.detail : ""))
+      .catch(() => "");
+    throw new Error(`session failed: ${res.status}${detail ? ` — ${detail}` : ""}`);
+  }
+  const body = (await res.json()) as {
+    session_id: string;
+    token: string;
+    token_expires_at: string;
+    events: DevSessionResult["events"];
+  };
+  return {
+    sessionId: body.session_id,
+    devToken: body.token,
+    tokenExpiresAt: body.token_expires_at,
+    events: body.events,
+  };
+}
+
+function startSession(baseUrl: string, options: RelaySessionOptions): Promise<DevSessionResult> {
+  if (options.apiKey) {
+    return createSession(baseUrl, { apiKey: options.apiKey, agentId: options.agentId });
+  }
+  if (!options.projectId) {
+    throw new Error("createRelaySession needs `apiKey` (or `projectId` for a local dev gateway)");
+  }
+  return createDevSession(baseUrl, { projectId: options.projectId, agentId: options.agentId });
+}
+
 export function createRelaySession(options: RelaySessionOptions): RelaySession {
   const baseUrl = options.gatewayUrl.replace(/\/$/, "");
   const transportMode: RelayTransportMode = options.transport ?? "text-only";
@@ -126,6 +241,7 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
   let voice: SmallWebRtcSession | null = null;
   const typeHandlers = new Map<string, Set<(event: RelayEventEnvelope) => void>>();
   const actionHandlers = new Map<string, ActionHandler>();
+  const actionSpecs = new Map<string, ActionSpec>();
   const stateHandlers = new Set<(state: RelayConnectionState) => void>();
   const voiceStateHandlers = new Set<(state: VoiceConnectionState) => void>();
   const audioLevelHandlers = new Set<(level: number) => void>();
@@ -180,12 +296,14 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
       return;
     }
     try {
-      await handler(params, { actionId, name });
+      const returned = await handler(params, { actionId, name });
+      const result =
+        returned && typeof returned === "object" && !Array.isArray(returned) ? returned : { ok: true };
       sendJson({
         type: "ACTION_APPLIED",
         action: name,
         action_id: actionId,
-        result: { ok: true },
+        result,
       });
     } catch (err) {
       sendJson({
@@ -221,6 +339,15 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
     }
   };
 
+  /** App handlers must never break the session (connect, event stream): log and continue. */
+  const safely = (handler: (event: RelayEventEnvelope) => void, event: RelayEventEnvelope) => {
+    try {
+      handler(event);
+    } catch (err) {
+      console.error(`relay: handler for ${event.type} threw`, err);
+    }
+  };
+
   const emit = (event: RelayEventEnvelope) => {
     if (event.type === "STATE_VERSION_ADVANCED") {
       noteServerStateVersion(event.payload.state_version);
@@ -237,7 +364,7 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
     }
     const handlers = typeHandlers.get(event.type);
     if (handlers) {
-      for (const handler of handlers) handler(event);
+      for (const handler of handlers) safely(handler, event);
     }
     if (event.type === "ACTION_REQUESTED") {
       void handleActionRequested(event);
@@ -245,13 +372,13 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
     if (event.type === "APPROVAL_REQUESTED") {
       const approvalHandlers = typeHandlers.get("approval_requested");
       if (approvalHandlers) {
-        for (const handler of approvalHandlers) handler(event);
+        for (const handler of approvalHandlers) safely(handler, event);
       }
     }
     if (event.type === "TRANSCRIPT_FINAL") {
       const transcriptHandlers = typeHandlers.get("transcript");
       if (transcriptHandlers) {
-        for (const handler of transcriptHandlers) handler(event);
+        for (const handler of transcriptHandlers) safely(handler, event);
       }
     }
     if (event.type === "SPEECH_STARTED") {
@@ -311,18 +438,14 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
     setState("connecting");
     try {
       if (!sessionId || !devToken) {
-        const created = await createDevSession(baseUrl, {
-          projectId: options.projectId,
-          agentId: options.agentId,
-        });
+        const created = await startSession(baseUrl, options);
         sessionId = created.sessionId;
         devToken = created.devToken;
         for (const event of created.events) emit(event);
       }
       const wsUrl = baseUrl.replace(/^http/, "ws");
-      socket = new WebSocket(
-        `${wsUrl}/ws/sessions/${sessionId}?token=${encodeURIComponent(devToken!)}`,
-      );
+      // Browsers cannot set WebSocket headers, so the token travels as a subprotocol — not in the URL.
+      socket = new WebSocket(`${wsUrl}/ws/sessions/${sessionId}`, ["relay.v1", `relay.token.${devToken!}`]);
       await new Promise<void>((resolve, reject) => {
         if (!socket) return reject(new Error("socket missing"));
         socket.onopen = () => resolve();
@@ -341,6 +464,7 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
         setState("disconnected");
         void voice?.disconnect();
       };
+      advertiseActions(); // actions registered before connect()
       setState("ready");
     } catch (e) {
       setState("error");
@@ -386,9 +510,29 @@ export function createRelaySession(options: RelaySessionOptions): RelaySession {
     sendJson({ type: "USER_TEXT", text });
   };
 
-  const registerAction = (name: string, handler: ActionHandler) => {
+  const advertiseActions = () => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    const actions = [...actionSpecs].map(([name, spec]) => ({
+      name,
+      description: spec.description,
+      parameters: spec.parameters ?? { type: "object", properties: {} },
+    }));
+    socket.send(JSON.stringify({ type: "APP_EVENT", name: CLIENT_CAPABILITIES_EVENT, payload: { actions } }));
+  };
+
+  const registerAction = (name: string, handler: ActionHandler, spec?: ActionSpec) => {
     actionHandlers.set(name, handler);
-    return () => actionHandlers.delete(name);
+    if (spec) {
+      actionSpecs.set(name, spec);
+      advertiseActions();
+    }
+    return () => {
+      if (actionHandlers.get(name) === handler) actionHandlers.delete(name);
+      if (spec && actionSpecs.get(name) === spec) {
+        actionSpecs.delete(name);
+        advertiseActions();
+      }
+    };
   };
 
   const sendState = (state: Record<string, unknown>, options?: SendStateOptions) => {

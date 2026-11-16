@@ -14,6 +14,8 @@ COPY adapters/agents/reference /app/adapters/agents/reference
 COPY adapters/tools/http /app/adapters/tools/http
 COPY adapters/persistence/postgres /app/adapters/persistence/postgres
 COPY adapters/persistence/redis /app/adapters/persistence/redis
+COPY adapters/observability/prometheus /app/adapters/observability/prometheus
+COPY adapters/observability/otel /app/adapters/observability/otel
 COPY examples/mortgage-servicing/agent /app/examples/mortgage-servicing/agent
 COPY examples/mortgage-servicing/tools /app/examples/mortgage-servicing/tools
 COPY packages/protocol /app/packages/protocol
@@ -35,6 +37,8 @@ RUN pip install --no-cache-dir \
     -e /app/examples/mortgage-servicing/tools \
     -e /app/adapters/persistence/postgres \
     -e /app/adapters/persistence/redis \
+    -e /app/adapters/observability/prometheus \
+    -e /app/adapters/observability/otel \
     -e /app/services/gateway
 
 EXPOSE 8080

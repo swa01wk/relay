@@ -16,7 +16,7 @@ test.describe("Phase 6 parallel tools", () => {
     await page.getByRole("button", { name: "Send", exact: true }).click();
 
     await expect(page.getByText(/2847\.50|MORT-2931/i)).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText(/assistant:/i).first()).toBeVisible();
+    await expect(page.locator('[data-testid="chat-message"][data-chat-role="assistant"]').first()).toBeVisible();
   });
 
   test("P06-TC-002 parallel payment and rate fetch updates activity UI", async ({ page }) => {

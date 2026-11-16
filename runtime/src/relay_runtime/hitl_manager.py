@@ -8,6 +8,12 @@ from typing import Any
 from uuid import uuid4
 
 
+# Follow-up turn texts (user message) after an approval decision, so the agent can confirm.
+ACTION_APPROVED_PREFIX = "[Action approved]"
+ACTION_REJECTED_PREFIX = "[Action rejected]"
+ACTION_FAILED_PREFIX = "[Action failed]"
+
+
 class ApprovalStatus(StrEnum):
     PENDING = "pending"
     GRANTED = "granted"
@@ -33,6 +39,13 @@ class ApprovalRecord:
     summary: str = ""
     idempotency_key: str = ""
     auth_proof: str | None = None
+    # Optional tool that confirms the commit (called with verify_arguments + commit_id).
+    verify_tool: str = ""
+    verify_arguments: dict[str, Any] = field(default_factory=dict)
+    # Run a follow-up agent turn with the outcome (model-proposed actions, saved forms).
+    followup: bool = False
+    # Set when the change came from submitting a tool-bound form.
+    form_id: str = ""
 
     def __post_init__(self) -> None:
         if not self.idempotency_key:
@@ -52,6 +65,10 @@ class HITLManager:
         arguments: dict[str, Any],
         summary: str = "",
         approval_id: str | None = None,
+        verify_tool: str = "",
+        verify_arguments: dict[str, Any] | None = None,
+        followup: bool = False,
+        form_id: str = "",
     ) -> ApprovalRecord:
         aid = approval_id or str(uuid4())
         record = ApprovalRecord(
@@ -60,6 +77,10 @@ class HITLManager:
             arguments=dict(arguments),
             summary=summary,
             idempotency_key=aid,
+            verify_tool=verify_tool,
+            verify_arguments=dict(verify_arguments or {}),
+            followup=followup,
+            form_id=form_id,
         )
         self._records[aid] = record
         return record

@@ -9,5 +9,6 @@ Implementation details for **runtime ports** (PRD §5.2). Pipecat, OpenAI, Deepg
 | `speech/` | `SpeechToTextProvider`, `TextToSpeechProvider`, `TurnDetector` |
 | `agents/` | `AgentAdapter` |
 | `persistence/` | `EventStore`, `StateStore` |
+| `observability/prometheus/`, `observability/otel/` | none (event-stream subscribers): Prometheus `/metrics` and OpenTelemetry traces |
 
 See [`plans/phase-00-foundation.md`](../plans/phase-00-foundation.md).

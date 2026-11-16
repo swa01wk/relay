@@ -1,7 +1,7 @@
 # Relay POC — implementation status
 
 **Overall status:** In progress — Phases 0–7 signed off; **Phases 8–11 implemented — sign-off pending** (see [ACCEPTANCE_TRACKER.md](./ACCEPTANCE_TRACKER.md))  
-**Last updated:** 2026-09-28 — Phase 10 timeline API + Phase 11 failure injection; pending voice UAT + full-stack Playwright  
+**Last updated:** 2026-09-29 — Full pytest suite green (138 passed, 3 consecutive runs): pipecat 1.12 prewarm compat in gateway, parallel payments + rate routing fix, Phase 4 TTS tests await background voice turn; pending voice UAT + full-stack Playwright  
 **Spec:** [Relay_Final_PRD_16_Pages.docx](../Relay_Final_PRD_16_Pages.docx)
 
 Update this file when a phase is **signed off** (milestones + [TESTING.md](./TESTING.md) acceptance and gate tests)—not on implementation alone. Scope detail: linked `phase-NN-*.md` plans.
@@ -167,6 +167,7 @@ Check milestones as work completes. **Exit** = that phase’s acceptance criteri
 - [x] P04-TC-001 — browser voice @ :3000 (spoken reply + assistant transcript)
 - [x] P04-TC-002 — text regression (live Docker WS + pytest `test_text_turn_integration`)
 - [x] P04-TC-003 — mid-TTS cancel (`test_p04_tc_003_cancel_agent_playback`)
+- [x] 2026-09-29: `test_voice_tts_integration.py` (P04-TC-003/004) updated to await the background voice response task introduced by D-003-006 commit timers — 3/3 pass
 - [x] P04-TC-004 — latency metrics (`test_p04_tc_004_latency_metrics_logged`; live `generated_text` on WS)
 - [x] **Exit:** low-latency spoken happy path; generated vs playout separated; FSM includes AGENT_SPEAKING
 
@@ -229,6 +230,7 @@ Check milestones as work completes. **Exit** = that phase’s acceptance criteri
 **Validation (tests → exit)**
 
 - [x] P06-TC-001–004 pass (Playwright text payment compare + parallel activity; pytest timeout + stale result; voice uses same agent paths as text)
+- [x] 2026-09-29 regression fix: “payments **and** rate history” was captured by the rate-only route; `_is_rate_history_intent` now yields to the parallel bundle — `test_p06_parallel_investigation_events` pass
 - [x] **Exit:** parallel tools without blocking conversation (§14.3); demo steps 5–6; commit not callable without HITL
 
 **Manual UAT (2026-09-25, operator @ :3000 + Docker gateway)**
@@ -264,7 +266,7 @@ Check milestones as work completes. **Exit** = that phase’s acceptance criteri
 
 - [x] Voice loop + Rajesh search + email + payments tool + barge-in (events: `SPEECH_STARTED` all turns; TTS after interrupt OK)
 - [ ] EMI history uses seeded/honest data ([UAT-001](./UAT_VOICE_SCRIPT.md#uat-001))
-- [ ] Parallel payments + rate compare in one voice turn ([UAT-003](./UAT_VOICE_SCRIPT.md#uat-003))
+- [ ] Parallel payments + rate compare in one voice turn ([UAT-003](./UAT_VOICE_SCRIPT.md#uat-003)) — agent routing fixed 2026-09-29 (text path verified); voice re-test pending
 - [ ] Rate history view + §12.1 steps 7–9 script complete ([UAT-004](./UAT_VOICE_SCRIPT.md#uat-004))
 
 **Validation (tests → exit)**
@@ -298,6 +300,7 @@ Check milestones as work completes. **Exit** = that phase’s acceptance criteri
 **Validation (tests → exit)**
 
 - [x] P08-TC-004 pass (pytest); P08-TC-001 pass (Playwright manual edit); P08-TC-001b agent date sync (Playwright)
+- [x] Gateway WS — `services/gateway/tests/test_p08_state_conflict_ws.py` (P08-TC-002 over WS) pass 2026-09-29
 - [x] P08-TC-002–003 Playwright (`phase-08-state-versioning.spec.ts`; needs `PLAYWRIGHT_E2E=1` + stack @ :8080/:3000)
 - [x] Pytest slow-tool race (`test_client_snapshot_applies_during_slow_tool`) — agent pins `based_on_version` before async `prepare_correction`
 - [x] [UAT-006](./UAT_VOICE_SCRIPT.md#uat-006) automated: Playwright row #11 + `test_march_voice_phrase_updates_draft_state`
@@ -329,7 +332,7 @@ Check milestones as work completes. **Exit** = that phase’s acceptance criteri
 
 - [x] P09-TC-003 — `runtime/tests/test_phase09_hitl.py`
 - [x] P09-TC-001/002/004 — `e2e/phase-09-hitl.spec.ts` (with stack running)
-- [x] Gateway WS — `services/gateway/tests/test_p09_hitl_ws.py`
+- [x] Gateway WS — `services/gateway/tests/test_p09_hitl_ws.py` (re-verified 2026-09-29 after pipecat 1.12 prewarm fix)
 - [ ] **Exit:** operator voice UAT steps 13–15 ([UAT_VOICE_SCRIPT.md](./UAT_VOICE_SCRIPT.md)); then sign off with Phase 8 if still open
 
 ---

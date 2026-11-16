@@ -15,7 +15,7 @@ from pipecat.frames.frames import InterimTranscriptionFrame, TranscriptionFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from relay_gateway.app import create_app
-from relay_gateway import deps
+from relay_gateway.core import container as deps
 from relay_protocol import EventType
 from relay_runtime.memory_event_store import MemoryEventStore
 

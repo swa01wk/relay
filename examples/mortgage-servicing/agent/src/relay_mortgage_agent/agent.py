@@ -10,8 +10,21 @@ from typing import Any
 from relay_protocol import EventType, RelayEvent, RelayEventMetadata
 from relay_runtime.model_router import ModelRouter
 from relay_runtime.ports.agent import AgentAdapter
+from relay_runtime.tool_registry import ToolRegistry
+from relay_runtime.tool_agent import ToolUsingAgent
+from relay_runtime.ui_surfaces import FORM_SUBMISSION_PREFIX, PRESENT_UI_ACTION
 
 from relay_mortgage_agent.response_guardrails import guard_stream
+from relay_mortgage_agent.tool_definitions import register_mortgage_tools
+from relay_mortgage_agent.ui_present import (
+    case_kv,
+    customers_table,
+    payments_chart,
+    payments_table,
+    present_ui_params,
+    rates_chart,
+    rates_table,
+)
 
 
 class MortgageServicingAgent(AgentAdapter):
@@ -23,6 +36,19 @@ class MortgageServicingAgent(AgentAdapter):
     ) -> None:
         self._model_router = model_router
         self._system_prompt = system_prompt or _default_system_prompt()
+        registry = ToolRegistry()
+        register_mortgage_tools(registry)
+        self._model_agent = ToolUsingAgent(
+            model_router,
+            system_prompt=self._system_prompt,
+            registry=registry,
+            instructions=_MORTGAGE_CANVAS_INSTRUCTIONS,
+            screen_formatter=None,
+            token_filter=guard_stream,
+            # commit_correction has its own draft → approve → commit → verify flow.
+            allow_proposals=False,
+        )
+        self._model_read_tool_names = self._model_agent.model_tool_names
 
     async def on_turn(
         self,
@@ -47,6 +73,14 @@ class MortgageServicingAgent(AgentAdapter):
         lower = user_text.lower()
         mortgage_id = _mortgage_id_from_context(context)
 
+        if user_text.startswith(FORM_SUBMISSION_PREFIX):
+            # Submitted field values would trip keyword routes; let the model interpret them.
+            async for token in self._stream_model_turn(
+                session_id, context, mortgage_id=mortgage_id, run_tool=run_tool, request_action=request_action
+            ):
+                yield token
+            return
+
         if _is_customer_search_intent(lower):
             query = _extract_search_query(user_text)
             if run_tool is None:
@@ -65,6 +99,7 @@ class MortgageServicingAgent(AgentAdapter):
                     "SHOW_SEARCH_RESULTS",
                     {"query": query, "customers": customers},
                 )
+                await _emit_playground(request_action, customers_table(customers))
                 target = _pick_mortgage_id(customers, preferred="MORT-2931")
                 if target:
                     summary += f" Opening mortgage {target} on your screen now."
@@ -82,6 +117,9 @@ class MortgageServicingAgent(AgentAdapter):
                     "OPEN_ENTITY",
                     {"entity_type": "mortgage", "id": "MORT-2931"},
                 )
+                case = _case_from_context(context, mortgage_id="MORT-2931")
+                if case:
+                    await _emit_playground(request_action, case_kv(case))
             text = "Opening mortgage MORT-2931 on your screen."
             for token in _chunk_text(text):
                 yield token
@@ -103,6 +141,10 @@ class MortgageServicingAgent(AgentAdapter):
                 await request_action(
                     "SHOW_RATE_HISTORY",
                     {"mortgage_id": mortgage_id, "rates": rates_result.get("rates")},
+                )
+                await _emit_playground(
+                    request_action,
+                    rates_table(mortgage_id, list(rates_result.get("rates") or [])),
                 )
             for token in _chunk_text(summary):
                 yield token
@@ -130,6 +172,15 @@ class MortgageServicingAgent(AgentAdapter):
                     "SHOW_RATE_HISTORY",
                     {"mortgage_id": mortgage_id, "rates": rates_result.get("rates")},
                 )
+                surfaces = []
+                if payments_result.get("payments"):
+                    surfaces.append(
+                        payments_table(mortgage_id, list(payments_result.get("payments") or []))
+                    )
+                rates = list(rates_result.get("rates") or [])
+                surfaces.append(rates_table(mortgage_id, rates))
+                surfaces.append(rates_chart(mortgage_id, rates))
+                await _emit_playground(request_action, *surfaces)
             for token in _chunk_text(summary):
                 yield token
             return
@@ -214,6 +265,8 @@ class MortgageServicingAgent(AgentAdapter):
                         "proposed_rate": rate,
                     },
                     summary=summary,
+                    verify_tool="verify_correction",
+                    verify_arguments={"mortgage_id": mid},
                 )
             text = (
                 "I've sent this draft for your approval — use Approve in the dialog "
@@ -263,6 +316,13 @@ class MortgageServicingAgent(AgentAdapter):
                 {"mortgage_id": mortgage_id, "months": 3},
             )
             summary = _summarize_payments(mortgage_id, payments_result)
+            payments = list(payments_result.get("payments") or [])
+            if payments:
+                await _emit_playground(
+                    request_action,
+                    payments_table(mortgage_id, payments),
+                    payments_chart(mortgage_id, payments),
+                )
             for token in _chunk_text(summary):
                 yield token
             return
@@ -275,29 +335,58 @@ class MortgageServicingAgent(AgentAdapter):
                 yield token
             return
 
-        messages: list[dict[str, str]] = [{"role": "system", "content": self._system_prompt}]
-        state_block = context.get("state") or {}
-        semantic = state_block.get("state") or {}
-        if semantic:
-            messages.append(
-                {
-                    "role": "system",
-                    "content": _format_screen_context_for_model(semantic, mortgage_id=mortgage_id),
-                }
-            )
-        for item in context.get("messages", []):
-            messages.append({"role": item["role"], "content": item["content"]})
-
-        provider = self._model_router.get_provider()
-
-        async def _raw_llm_tokens() -> AsyncIterator[str]:
-            async for chunk in provider.stream_completion(session_id, messages=messages):
-                token = str(chunk.get("text", ""))
-                if token:
-                    yield token
-
-        async for token in guard_stream(_raw_llm_tokens()):
+        async for token in self._stream_model_turn(
+            session_id, context, mortgage_id=mortgage_id, run_tool=run_tool, request_action=request_action
+        ):
             yield token
+
+    async def _stream_model_turn(
+        self,
+        session_id: str,
+        context: dict[str, Any],
+        *,
+        mortgage_id: str,
+        run_tool: Any,
+        request_action: Any,
+    ) -> AsyncIterator[str]:
+        """LLM turn with read tools + ``present_ui`` via the runtime ToolUsingAgent."""
+        del run_tool, request_action  # read from context by the tool agent
+        extra_system: list[str] = []
+        semantic = (context.get("state") or {}).get("state") or {}
+        if semantic:
+            extra_system.append(_format_screen_context_for_model(semantic, mortgage_id=mortgage_id))
+        extra_system.append(
+            f"The current mortgage is {mortgage_id}; use it when a request needs mortgage data."
+        )
+        async for token in self._model_agent.stream_model_turn(
+            session_id, context, extra_system=extra_system
+        ):
+            yield token
+
+    def state_after_commit(
+        self,
+        *,
+        state: dict[str, Any],
+        tool_name: str,
+        arguments: dict[str, Any],
+        commit_result: dict[str, Any],
+        verify_result: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """After a verified correction: mark the draft committed and show the refreshed case."""
+        del tool_name, commit_result
+        mortgage = verify_result.get("mortgage")
+        if not isinstance(mortgage, dict):
+            return None
+        draft = dict(state.get("correction_draft") or {})
+        draft["status"] = "committed"
+        draft["mortgage_id"] = arguments.get("mortgage_id") or draft.get("mortgage_id")
+        return {
+            **state,
+            "correction_draft": draft,
+            "screen": "mortgage_case",
+            "workflow": "correction_committed",
+            "case_summary": {**dict(state.get("case_summary") or {}), **mortgage},
+        }
 
     async def handle_runtime_event(
         self,
@@ -918,6 +1007,9 @@ def _is_payment_history_intent(lower: str) -> bool:
 
 
 def _is_rate_history_intent(lower: str) -> bool:
+    # "payments and rate history" belongs to the parallel bundle, not the rate-only route.
+    if "payment" in lower:
+        return False
     if "rate histor" in lower:
         return True
     if "rate" not in lower:
@@ -976,9 +1068,14 @@ def _summarize_parallel_investigation(
     return f"{payment_part} {rate_part}"
 
 
+_SEARCH_VERBS = ("find", "search", "look up", "lookup", "pull up", "bring up", "locate")
+
+
 def _is_customer_search_intent(lower: str) -> bool:
+    # Only explicit lookups: "Compare Rajesh's mortgages" must reach the model, not re-search.
     if "rajesh" in lower:
-        return True
+        bare_name = re.sub(r"[^a-z ]", "", lower).strip() in ("rajesh", "rajesh sharma")
+        return bare_name or any(verb in lower for verb in _SEARCH_VERBS)
     if "find" in lower and ("customer" in lower or "sharma" in lower):
         return True
     if lower.strip().startswith("search "):
@@ -1006,6 +1103,33 @@ def _pick_mortgage_id(customers: list[dict[str, Any]], *, preferred: str) -> str
         mortgages = customer.get("mortgages") or []
         if mortgages:
             return str(mortgages[0].get("id"))
+    return None
+
+
+_MORTGAGE_CANVAS_INSTRUCTIONS = (
+    "Use comparison to put 2-4 loans or customers side by side. You have no tool that updates "
+    "customer records, so after a form submission say the change still has to be applied in "
+    "the servicing system."
+)
+
+
+async def _emit_playground(request_action: Any, *surfaces: dict[str, Any]) -> None:
+    """Mirror structured results onto the playground canvas (``PRESENT_UI``)."""
+    if request_action is None or not surfaces:
+        return
+    await request_action(PRESENT_UI_ACTION, present_ui_params(*surfaces))
+
+
+def _case_from_context(context: dict[str, Any], *, mortgage_id: str) -> dict[str, Any] | None:
+    """Case fields for ``mortgage_id`` from the screen's case summary or search results."""
+    semantic = _semantic_state(context)
+    summary = semantic.get("case_summary") or {}
+    if str(summary.get("id")) == mortgage_id:
+        return dict(summary)
+    for customer in semantic.get("search_results") or []:
+        for mortgage in customer.get("mortgages") or []:
+            if str(mortgage.get("id")) == mortgage_id:
+                return {**mortgage, "customer_name": customer.get("name")}
     return None
 
 

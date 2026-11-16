@@ -1,12 +1,49 @@
 {
-  "name": "@relay/web-sdk",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@sumukhj1219-wkt-org/relay-web-sdk",
+  "version": "0.2.4",
+  "description": "Relay Web SDK: voice + text AI assistant sessions, UI actions, shared state and generative UI surfaces. Coding agents: read AGENTS.md.",
+  "keywords": [
+    "relay",
+    "voice",
+    "ai-assistant",
+    "generative-ui",
+    "webrtc",
+    "sdk"
+  ],
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./avatar": {
+      "types": "./dist/avatar.d.ts",
+      "import": "./dist/avatar.js",
+      "default": "./dist/avatar.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.mjs",
+    "docs",
+    "AGENTS.md",
+    "README.md"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
     "lint": "tsc --noEmit",
-    "test": "node --test src/import-boundary.test.mjs"
+    "test": "tsc -p tsconfig.build.json && node --test src/import-boundary.test.mjs && node --test --experimental-strip-types src/ui-surfaces.test.mjs && node --test src/navigation.test.mjs src/page-forms.test.mjs src/avatar.test.mjs src/package.test.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

@@ -1,24 +1,23 @@
 import { test, expect } from "@playwright/test";
 
+import { connectSession, openRajeshCase } from "./helpers";
+
 /**
  * P11-TC-001 (staged, text-first) — §12.1 narrative steps 1–15 subset through commit.
  * Voice-first full UAT: manual [UAT_VOICE_SCRIPT.md](../../../plans/UAT_VOICE_SCRIPT.md).
  */
 test.describe("Phase 11 — staged UAT demo (text)", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Connect" }).click();
-    await expect(page.getByText("Session ready.")).toBeVisible({ timeout: 15_000 });
+    await connectSession(page);
   });
 
   test("P11-TC-001 staged — Rajesh investigation through commit verify", async ({ page }) => {
     const send = async (text: string) => {
       await page.getByPlaceholder('Try "Find Rajesh Sharma"').fill(text);
-      await page.getByRole("button", { name: "Send" }).click();
+      await page.getByRole("button", { name: "Send", exact: true }).click();
     };
 
-    await send("Find Rajesh Sharma");
-    await expect(page.getByTestId("mortgage-case-view")).toBeVisible({ timeout: 30_000 });
+    await openRajeshCase(page);
 
     await send("Compare last 3 months payments");
     await expect(page.getByTestId("chat-message").last()).toBeVisible({ timeout: 30_000 });

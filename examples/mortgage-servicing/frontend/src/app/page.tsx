@@ -4,23 +4,56 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createRelaySession,
   fetchHealth,
+  registerPlaygroundSurfaces,
+  submitForm,
   type RelayConnectionState,
   type RelayEventEnvelope,
+  type UiSurface,
   type VoiceConnectionState,
-} from "@relay/web-sdk";
+} from "@sumukhj1219-wkt-org/relay-web-sdk";
+import {
+  CheckCircle2Icon,
+  Loader2Icon,
+  MicIcon,
+  MicOffIcon,
+  PhoneOffIcon,
+  RotateCcwIcon,
+  SendIcon,
+  ShieldCheckIcon,
+  SparklesIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { applyPresentUi, PlaygroundCanvas } from "@/components/playground-canvas";
+import {
+  CaseView,
+  CorrectionDraftView,
+  HomeView,
+  RateHistoryView,
+  SearchResultsView,
+  WorkspaceHeader,
+} from "@/components/workspace-views";
 import {
   initialMortgageUiState,
   recalculateDraftForEffectiveDate,
   type MortgageUiState,
 } from "@/lib/mortgage-ui-state";
-import type { SendStateOptions } from "@relay/web-sdk";
+import type { SendStateOptions } from "@sumukhj1219-wkt-org/relay-web-sdk";
 
 const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL ?? "http://localhost:8080";
 const projectId = process.env.NEXT_PUBLIC_PROJECT_ID ?? "proj-mortgage-poc";
 const agentId = process.env.NEXT_PUBLIC_AGENT_ID ?? "agent-mortgage-ref";
+// Experience Center: sessions come from this app's server, one data sandbox per visitor (src/lib/sandbox.ts).
+const sandboxMode = ["1", "true", "yes"].includes((process.env.NEXT_PUBLIC_RELAY_SANDBOX ?? "").toLowerCase());
+
+/** The session this app's server started for the visitor's sandbox. */
+async function startSandboxSession(): Promise<{ sessionId: string; devToken: string }> {
+  const res = await fetch("/api/assistant/session", { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `Couldn't start the demo session (status ${res.status})`);
+  return { sessionId: body.sessionId, devToken: body.token };
+}
 
 type ChatLine = {
   id: string;
@@ -64,6 +97,7 @@ export default function HomePage() {
     toolName: string;
   } | null>(null);
   const [commitVerified, setCommitVerified] = useState<string | null>(null);
+  const [surfaces, setSurfaces] = useState<UiSurface[]>([]);
   const sessionRef = useRef<ReturnType<typeof createRelaySession> | null>(null);
   const assistantBufferRef = useRef<{ id: string; text: string } | null>(null);
   const voiceStateRef = useRef<VoiceConnectionState>("disconnected");
@@ -170,6 +204,9 @@ export default function HomePage() {
           publishUiState(next);
           session.sendEvent("ui.rate_history", { mortgage_id: mortgageId, count: rates.length });
         }),
+        registerPlaygroundSurfaces(session, (params) => {
+          setSurfaces((current) => applyPresentUi(current, params));
+        }),
       ];
     },
     [publishUiState],
@@ -201,11 +238,22 @@ export default function HomePage() {
     setStateConflict(null);
     setPendingApproval(null);
     setCommitVerified(null);
+    setSurfaces([]);
     publishUiState(initialMortgageUiState());
     sessionRef.current?.disconnect();
+    let existing: { sessionId: string; devToken: string } | null = null;
+    if (sandboxMode) {
+      try {
+        existing = await startSandboxSession();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setBusy(false);
+        return;
+      }
+    }
     const session = createRelaySession({
       gatewayUrl,
-      projectId,
+      ...(existing ?? { projectId }),
       agentId,
       transport: "small-webrtc",
     });
@@ -404,6 +452,11 @@ export default function HomePage() {
     try {
       await session.connect();
       setSessionId(session.sessionId);
+      if (existing) {
+        // A server-started session's SESSION_READY came in the server's response, not to us.
+        appendMessage({ id: crypto.randomUUID(), role: "system", text: "Session ready." });
+        publishUiState(uiStateRef.current);
+      }
     } catch (e) {
       const raw = e instanceof Error ? e.message : "session failed";
       setError(
@@ -441,285 +494,351 @@ export default function HomePage() {
     sessionRef.current?.setMicMuted(next);
   }, [micMuted]);
 
-  const sendMessage = useCallback(() => {
-    const text = draft.trim();
-    if (!text || !sessionRef.current) return;
+  const sendText = useCallback((text: string) => {
+    if (!text.trim() || !sessionRef.current) return;
     setError(null);
     try {
-      sessionRef.current.sendText(text);
-      setDraft("");
+      sessionRef.current.sendText(text.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "send failed");
     }
-  }, [draft]);
+  }, []);
+
+  const sendMessage = useCallback(() => {
+    const text = draft.trim();
+    if (!text) return;
+    sendText(text);
+    setDraft("");
+  }, [draft, sendText]);
+
+  const changeEffectiveDate = useCallback(
+    (effectiveDate: string) => {
+      const nextDraft = recalculateDraftForEffectiveDate(uiStateRef.current.correction_draft ?? {}, effectiveDate);
+      setStateConflict(null);
+      publishUiState({ ...uiStateRef.current, correction_draft: nextDraft }, { optimisticAdvance: true });
+    },
+    [publishUiState],
+  );
+
+  const resetDemo = useCallback(async () => {
+    await fetch("/api/sandbox/reset", { method: "POST" }).catch(() => undefined);
+    await connectSession();
+  }, [connectSession]);
+
+  const connected = connectionState === "ready";
+  const voiceOn = voiceState === "connected" || voiceState === "connecting";
+  const running = uiState.activities.filter((a) => a.status === "running");
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 p-8">
-      <Card>
-        <CardHeader>
-          <CardTitle>Mortgage servicing — tools &amp; investigations</CardTitle>
-          <CardDescription>
-            Phase 9 — draft → approval → commit → verify (try: prepare correction draft, then
-            &quot;Submit for approval&quot; and use the approval dialog).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" disabled={busy} onClick={checkHealth}>
-              Check /health
-            </Button>
-            <Button type="button" variant="outline" disabled={busy} onClick={connectSession}>
-              Connect
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={busy || connectionState !== "ready"}
-              onClick={connectVoice}
-            >
-              Connect voice
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={voiceState === "disconnected"}
-              onClick={disconnectVoice}
-            >
-              Disconnect voice
-            </Button>
-            <Button
-              type="button"
-              variant={micMuted ? "destructive" : "outline"}
-              disabled={voiceState !== "connected"}
-              onClick={toggleMute}
-            >
-              {micMuted ? "Unmute mic" : "Mute mic"}
-            </Button>
+    <div className="flex min-h-dvh flex-col">
+      <header className="sticky top-0 z-30 border-b bg-card/90 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-3 px-4">
+          <span className="grid size-8 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground" aria-hidden="true">
+            LS
+          </span>
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-sm font-semibold">Loan Servicing Console</p>
+            <p className="hidden text-xs text-muted-foreground sm:block">Example app · powered by Relay</p>
           </div>
-          {health && (
-            <p className="text-sm">
-              Gateway health: <strong>{health}</strong>
-            </p>
-          )}
-          {voiceState === "connected" && (
-            <div className="space-y-1 text-sm text-muted-foreground">
-              <p>
-                Voice is on — speak after the mic meter moves, or use Send for spoken text replies.
-                On open speakers, use <strong>Mute mic</strong> while the agent is speaking to avoid
-                echo and false interrupts.
-              </p>
-              <p className="text-xs">
-                Mic level:{" "}
-                <span data-testid="mic-level-bar" className="inline-block min-w-[8rem]">
-                  {"█".repeat(Math.min(20, Math.round(audioLevel * 40))) ||
-                    (audioLevel > 0.005 ? "▪" : "—")}
-                </span>{" "}
-                {audioLevel < 0.005 ? "(silent — check macOS mic permission for Chrome)" : ""}
-              </p>
-            </div>
-          )}
-          <p className="text-sm">
-            RP: <strong>{connectionState}</strong> · Voice: <strong>{voiceState}</strong>
-            {agentSpeaking && (
-              <>
-                {" "}
-                · <strong className="text-primary">Agent speaking</strong>
-              </>
-            )}
-            {sessionId && (
-              <>
-                {" "}
-                · session <code className="text-xs">{sessionId}</code>
-              </>
-            )}
-          </p>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="relay-panel-enter rounded-md border p-3 transition-shadow duration-300 hover:shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">Application view</p>
-              <div key={uiState.screen} className="relay-screen-enter">
-              {uiState.screen === "home" && (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Connect and ask the agent to find Rajesh Sharma or open MORT-2931.
-                </p>
-              )}
-              {uiState.screen === "search_results" && (
-                <div className="mt-2 space-y-2" data-testid="search-results-view">
-                  <p className="text-sm font-medium">Search: {uiState.search_query}</p>
-                  <ul className="list-disc pl-5 text-sm">
-                    {uiState.search_results.map((c) => (
-                      <li key={String(c.id)} data-testid="search-result-row">
-                        {String(c.name)} ({String(c.id)})
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {uiState.screen === "mortgage_case" && uiState.case_summary && (
-                <div className="mt-2 space-y-1 text-sm" data-testid="mortgage-case-view">
-                  <p className="font-medium">Case {String(uiState.case_summary.id)}</p>
-                  <p>{String(uiState.case_summary.customer_name ?? "")}</p>
-                  <p>{String(uiState.case_summary.property ?? "")}</p>
-                  <p>Status: {String(uiState.case_summary.status ?? "unknown")}</p>
-                  <p data-testid="case-current-rate">
-                    Rate: {Number(uiState.case_summary.current_rate ?? 0).toFixed(3)}%
-                  </p>
-                  <p data-testid="case-current-emi">
-                    EMI: ${Number(uiState.case_summary.emi ?? 0).toFixed(2)}
-                  </p>
-                </div>
-              )}
-              {uiState.screen === "correction_draft" && uiState.correction_draft && (
-                <div className="mt-2 space-y-2 text-sm" data-testid="correction-draft-view">
-                  <p className="font-medium">
-                    Draft correction — {String(uiState.correction_draft.mortgage_id ?? "")}
-                  </p>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs text-muted-foreground">Effective date</span>
-                    <Input
-                      data-testid="correction-effective-date"
-                      value={String(uiState.correction_draft.effective_date ?? "")}
-                      onChange={(e) => {
-                        const effectiveDate = e.target.value;
-                        const draft = recalculateDraftForEffectiveDate(
-                          uiStateRef.current.correction_draft ?? {},
-                          effectiveDate,
-                        );
-                        const next: MortgageUiState = {
-                          ...uiStateRef.current,
-                          correction_draft: draft,
-                        };
-                        setStateConflict(null);
-                        publishUiState(next, { optimisticAdvance: true });
-                      }}
-                    />
-                  </label>
-                  <p data-testid="correction-projected-emi">
-                    Projected EMI: ${Number(uiState.correction_draft.projected_emi ?? 0).toFixed(2)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Delta ${Number(uiState.correction_draft.estimated_emi_delta ?? 0).toFixed(2)} vs
-                    current ${Number(uiState.correction_draft.current_emi ?? 0).toFixed(2)}
-                  </p>
-                  <p className="text-xs" data-testid="draft-status">
-                    Status: {String(uiState.correction_draft.status ?? "draft")}
-                  </p>
-                </div>
-              )}
-              {uiState.screen === "rate_history" && (
-                <div className="mt-2 space-y-2" data-testid="rate-history-view">
-                  <p className="text-sm font-medium">Rate history</p>
-                  <ul className="list-disc pl-5 text-sm">
-                    {uiState.rate_history.map((row, idx) => (
-                      <li key={`${String(row.effective_date)}-${idx}`}>
-                        {String(row.effective_date)}: {String(row.rate)}% ({String(row.reason ?? "")})
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              </div>
-            </div>
-            <div
-              className="relay-panel-enter rounded-md border p-3 transition-shadow duration-300 hover:shadow-sm"
-              data-testid="activity-panel"
-            >
-              <p className="text-xs font-medium text-muted-foreground">Agent activity (RP)</p>
-              {uiState.activities.length === 0 ? (
-                <p className="mt-2 text-sm text-muted-foreground">No in-flight tool activity.</p>
-              ) : (
-                <ul className="mt-2 space-y-2 text-sm">
-                  {uiState.activities.map((activity) => (
-                    <li key={activity.activity_id} data-testid="activity-row">
-                      <span className="font-medium">{activity.label ?? activity.activity_id}</span>{" "}
-                      — {Math.round(activity.progress * 100)}% ({activity.status})
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div
-              className="relay-panel-enter rounded-md border p-3 transition-shadow duration-300 hover:shadow-sm md:col-span-2"
-              data-testid="shared-state-panel"
-            >
-              <p className="text-xs font-medium text-muted-foreground">Shared state (RP)</p>
-              <pre className="mt-2 max-h-40 overflow-auto text-xs">{JSON.stringify(uiState, null, 2)}</pre>
-            </div>
-          </div>
-          <div className="flex max-h-60 flex-col gap-2 overflow-y-auto rounded-md border p-3">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className="text-sm"
-                data-testid="chat-message"
-                data-chat-role={m.role}
+          <div className="ml-auto flex items-center gap-2">
+            <ConnectionPill state={connectionState} />
+            {sandboxMode && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                title="Your changes are private to you. Reset puts the demo data back."
+                onClick={() => void resetDemo()}
               >
-                <span className="font-medium capitalize">{m.role}:</span> {m.text}
+                <RotateCcwIcon className="size-4" /> <span className="hidden sm:inline">Reset demo</span>
+              </Button>
+            )}
+            {(connected || messages.length > 0) && (
+              <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={connectSession}>
+                {connected ? "New conversation" : "Reconnect"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto grid w-full max-w-[1400px] flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_400px]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <section className="rounded-xl border bg-card shadow-sm" aria-label="Workspace">
+            <div className="flex items-center gap-3 border-b px-4 py-2.5">
+              <WorkspaceHeader state={uiState} />
+              {running.length > 0 && (
+                <span className="ml-auto flex items-center gap-1.5 text-xs text-primary">
+                  <Loader2Icon className="size-3.5 animate-spin" /> {running[0].label ?? "Working"}
+                </span>
+              )}
+            </div>
+            <div key={uiState.screen} className="relay-screen-enter p-4 sm:p-5">
+              {uiState.screen === "home" && <HomeView connected={connected} connecting={busy} onAsk={sendText} onConnect={() => void connectSession()} />}
+              {uiState.screen === "search_results" && (
+                <SearchResultsView state={uiState} onOpen={(id) => sendText(`Open ${id}`)} />
+              )}
+              {uiState.screen === "mortgage_case" && uiState.case_summary && <CaseView state={uiState} />}
+              {uiState.screen === "correction_draft" && uiState.correction_draft && (
+                <CorrectionDraftView state={uiState} onEffectiveDateChange={changeEffectiveDate} />
+              )}
+              {uiState.screen === "rate_history" && <RateHistoryView state={uiState} />}
+            </div>
+            {(commitVerified || stateConflict) && (
+              <div className="space-y-2 border-t px-4 py-3">
+                {commitVerified && (
+                  <p className="flex items-center gap-2 rounded-md bg-success-soft px-3 py-2 text-sm text-success" data-testid="commit-verified-banner">
+                    <CheckCircle2Icon className="size-4 shrink-0" /> {commitVerified}
+                  </p>
+                )}
+                {stateConflict && (
+                  <p className="flex items-center gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning" data-testid="state-conflict-banner">
+                    <TriangleAlertIcon className="size-4 shrink-0" /> {stateConflict}
+                  </p>
+                )}
               </div>
+            )}
+          </section>
+
+          <PlaygroundCanvas
+            surfaces={surfaces}
+            onSubmitForm={(form, values) => {
+              if (sessionRef.current) submitForm(sessionRef.current, form, values);
+            }}
+            onRemove={(index) => setSurfaces((current) => current.filter((_, i) => i !== index))}
+            onClear={() => setSurfaces([])}
+          />
+
+          <details className="rounded-xl border bg-card text-sm" data-testid="shared-state-panel">
+            <summary className="cursor-pointer select-none px-4 py-2.5 text-xs font-medium text-muted-foreground">
+              Developer details — connection, shared state
+            </summary>
+            <div className="space-y-3 border-t px-4 py-3">
+              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={checkHealth}>
+                  Check /health
+                </Button>
+                {health && (
+                  <span>
+                    Gateway health: <strong className="text-foreground">{health}</strong>
+                  </span>
+                )}
+                <span>
+                  RP: <strong className="text-foreground">{connectionState}</strong> · Voice:{" "}
+                  <strong className="text-foreground">{voiceState}</strong>
+                </span>
+                {sessionId && <code className="font-mono">{sessionId}</code>}
+              </div>
+              <pre className="max-h-60 overflow-auto rounded-md bg-muted p-3 font-mono text-xs">
+                {JSON.stringify(uiState, null, 2)}
+              </pre>
+            </div>
+          </details>
+        </div>
+
+        <aside
+          className="flex min-h-[32rem] flex-col rounded-xl border bg-card shadow-sm lg:sticky lg:top-[4.5rem] lg:h-[calc(100dvh-5.5rem)]"
+          aria-label="Assistant"
+        >
+          <div className="flex items-center gap-2 border-b px-4 py-3">
+            <SparklesIcon className="size-4 text-primary" aria-hidden="true" />
+            <h2 className="text-sm font-semibold">Assistant</h2>
+            {agentSpeaking && (
+              <span className="flex items-center gap-1 text-xs text-primary">
+                <span className="relay-pulse size-1.5 rounded-full bg-primary" /> speaking
+              </span>
+            )}
+            {connected && (
+              <div className="ml-auto flex items-center gap-1">
+                {voiceOn && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant={micMuted ? "destructive" : "ghost"}
+                    disabled={voiceState !== "connected"}
+                    onClick={toggleMute}
+                    aria-label={micMuted ? "Unmute mic" : "Mute mic"}
+                    title={micMuted ? "Unmute mic" : "Mute mic (use while the assistant speaks on open speakers)"}
+                  >
+                    {micMuted ? <MicOffIcon className="size-4" /> : <MicIcon className="size-4" />}
+                  </Button>
+                )}
+                {voiceOn ? (
+                  <Button type="button" size="sm" variant="outline" onClick={disconnectVoice}>
+                    <PhoneOffIcon className="size-4" /> End voice
+                  </Button>
+                ) : (
+                  <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={connectVoice}>
+                    <MicIcon className="size-4" /> Start voice
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {voiceState === "connected" && (
+            <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-muted-foreground">
+              <span className="shrink-0">Mic</span>
+              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" data-testid="mic-level-bar">
+                <span
+                  className="block h-full rounded-full bg-primary transition-[width] duration-100"
+                  style={{ width: `${Math.min(100, Math.round(audioLevel * 250))}%` }}
+                />
+              </span>
+              {audioLevel < 0.005 && <span className="shrink-0">silent — check mic permission</span>}
+            </div>
+          )}
+
+          <div className="border-b px-4 py-2" data-testid="activity-panel">
+            {uiState.activities.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No tools running.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {uiState.activities.slice(-3).map((activity) => (
+                  <li key={activity.activity_id} data-testid="activity-row" className="text-xs">
+                    <div className="flex items-center gap-2">
+                      {activity.status === "done" ? (
+                        <CheckCircle2Icon className="size-3.5 text-success" />
+                      ) : (
+                        <Loader2Icon className="size-3.5 animate-spin text-primary" />
+                      )}
+                      <span className="flex-1 truncate font-medium">{activity.label ?? activity.activity_id}</span>
+                      <span className="tabular text-muted-foreground">
+                        {Math.round(activity.progress * 100)}% ({activity.status})
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
+            {connectionState !== "ready" && messages.length === 0 && (
+              <div className="m-auto flex max-w-xs flex-col items-center gap-3 text-center">
+                <span className="grid size-11 place-items-center rounded-full bg-primary-soft text-primary">
+                  <SparklesIcon className="size-5" />
+                </span>
+                <p className="text-sm font-medium">Your servicing assistant</p>
+                <p className="text-xs text-muted-foreground">
+                  Finds borrowers, explains payments and drafts corrections. Speak or type once connected.
+                </p>
+                <Button type="button" disabled={busy} onClick={connectSession}>
+                  {busy && <Loader2Icon className="size-4 animate-spin" />}
+                  Connect
+                </Button>
+              </div>
+            )}
+            {messages.map((m) => (
+              <ChatBubble key={m.id} role={m.role} text={m.text} />
             ))}
             {liveTranscript.trim() && (
-              <div className="text-sm text-muted-foreground" data-testid="live-user-transcript">
-                <span className="font-medium">User (speaking):</span> {liveTranscript}
+              <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm border border-dashed px-3 py-2 text-sm text-muted-foreground" data-testid="live-user-transcript">
+                {liveTranscript}
+              </div>
+            )}
+            {pendingApproval && (
+              <div
+                className="relay-panel-enter rounded-xl border border-warning/40 bg-warning-soft/60 p-4 text-sm"
+                data-testid="approval-modal"
+                role="group"
+                aria-label="Approval required"
+              >
+                <p className="flex items-center gap-2 font-semibold">
+                  <ShieldCheckIcon className="size-4 text-warning" /> Approval required
+                </p>
+                <p className="mt-1.5">{pendingApproval.summary}</p>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">{pendingApproval.toolName}</p>
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    data-testid="approval-approve-btn"
+                    onClick={() => sessionRef.current?.grantApproval(pendingApproval.approvalId)}
+                  >
+                    Approve &amp; commit
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    data-testid="approval-reject-btn"
+                    onClick={() => sessionRef.current?.rejectApproval(pendingApproval.approvalId)}
+                  >
+                    Reject
+                  </Button>
+                </div>
               </div>
             )}
           </div>
-          <div className="flex gap-2">
+
+          {error && (
+            <p className="mx-4 mb-2 flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-xs text-danger" role="alert">
+              <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" /> {error}
+            </p>
+          )}
+          <form
+            className="flex gap-2 border-t p-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              sendMessage();
+            }}
+          >
             <Input
               value={draft}
               placeholder='Try "Find Rajesh Sharma"'
-              disabled={connectionState !== "ready"}
+              disabled={!connected}
               onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") sendMessage();
-              }}
+              aria-label="Message the assistant"
             />
-            <Button type="button" disabled={connectionState !== "ready" || !draft.trim()} onClick={sendMessage}>
-              Send
+            <Button type="submit" size="icon" disabled={!connected || !draft.trim()} aria-label="Send" title="Send">
+              <SendIcon className="size-4" />
             </Button>
-          </div>
-          {pendingApproval && (
-            <div
-              className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm"
-              data-testid="approval-modal"
-              role="dialog"
-              aria-label="Approval required"
-            >
-              <p className="font-medium">Approval required</p>
-              <p className="mt-1 text-muted-foreground">{pendingApproval.summary}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Tool: {pendingApproval.toolName}
-              </p>
-              <div className="mt-3 flex gap-2">
-                <Button
-                  type="button"
-                  data-testid="approval-approve-btn"
-                  onClick={() => sessionRef.current?.grantApproval(pendingApproval.approvalId)}
-                >
-                  Approve &amp; commit
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  data-testid="approval-reject-btn"
-                  onClick={() => sessionRef.current?.rejectApproval(pendingApproval.approvalId)}
-                >
-                  Reject
-                </Button>
-              </div>
-            </div>
-          )}
-          {commitVerified && (
-            <p className="text-sm text-green-800" data-testid="commit-verified-banner">
-              {commitVerified}
-            </p>
-          )}
-          {stateConflict && (
-            <p className="text-sm text-amber-700" data-testid="state-conflict-banner">
-              {stateConflict}
-            </p>
-          )}
-          {error && <p className="text-sm text-red-600">{error}</p>}
-        </CardContent>
-      </Card>
-    </main>
+          </form>
+        </aside>
+      </main>
+    </div>
+  );
+}
+
+function ConnectionPill({ state }: { state: RelayConnectionState }) {
+  const meta = {
+    ready: { label: "Assistant ready", dot: "bg-success", text: "text-success" },
+    connecting: { label: "Connecting…", dot: "bg-warning relay-pulse", text: "text-warning" },
+    error: { label: "Connection error", dot: "bg-danger", text: "text-danger" },
+    disconnected: { label: "Offline", dot: "bg-muted-foreground", text: "text-muted-foreground" },
+  }[state];
+  return (
+    <span
+      className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium sm:inline-flex ${meta.text}`}
+      data-testid="connection-state"
+      data-state={state}
+    >
+      <span className={`size-1.5 rounded-full ${meta.dot}`} /> {meta.label}
+    </span>
+  );
+}
+
+function ChatBubble({ role, text }: { role: ChatLine["role"]; text: string }) {
+  if (role === "system") {
+    return (
+      <p className="mx-auto text-center text-xs text-muted-foreground" data-testid="chat-message" data-chat-role={role}>
+        {text}
+      </p>
+    );
+  }
+  const mine = role === "user";
+  return (
+    <div
+      className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
+        mine ? "ml-auto rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-muted"
+      }`}
+      data-testid="chat-message"
+      data-chat-role={role}
+    >
+      <span className="sr-only">{mine ? "You: " : "Assistant: "}</span>
+      {text}
+    </div>
   );
 }

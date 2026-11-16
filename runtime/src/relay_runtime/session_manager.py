@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -10,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from secrets import token_urlsafe
+from collections.abc import Callable
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -18,7 +20,13 @@ from relay_protocol import EventType, RelayEvent, RelayEventMetadata, minimal_pa
 from relay_runtime.action_router import ActionRouter
 from relay_runtime.agent_runtime import AgentRuntime
 from relay_runtime.context_manager import ContextManager
-from relay_runtime.hitl_manager import HitlLifecycleStage, HITLManager
+from relay_runtime.hitl_manager import (
+    ACTION_APPROVED_PREFIX,
+    ACTION_FAILED_PREFIX,
+    ACTION_REJECTED_PREFIX,
+    HitlLifecycleStage,
+    HITLManager,
+)
 from relay_runtime.observability import STAGE_HITL, STAGE_MODEL, STAGE_STT, STAGE_TTS, emit_trace_span
 from relay_runtime.registry_tool_executor import RegistryToolExecutor
 from relay_runtime.state_version_engine import StateApplyOutcome, StateVersionEngine
@@ -30,6 +38,15 @@ from relay_runtime.interruption_manager import InterruptionManager, Interruption
 from relay_runtime.playback_tracker import PlaybackTracker
 from relay_runtime.turn_cancellation import TurnCancellation
 from relay_runtime.turn_manager import TurnManager, TurnPhase, TurnTransitionError
+from relay_runtime.ui_surfaces import (
+    PRESENT_UI_ACTION,
+    CLIENT_CAPABILITIES_EVENT,
+    FORM_SUBMIT_EVENT,
+    format_form_submission,
+    sanitize_client_actions,
+    MAX_OPEN_FORMS,
+    open_forms_from_present_ui,
+)
 from relay_runtime.speak_text import SpeechTextStream, plain_text_for_speech
 from relay_runtime.voice_output import VoiceOutputConfig, play_tts_stream, queue_to_text_iterator
 
@@ -114,6 +131,8 @@ class SessionRecord:
     token_expires_at: datetime
     sequence: int = 0
     ended: bool = False
+    # Who the app says this session is for ({"id", "attributes"?}); None when not given.
+    end_user: dict[str, Any] | None = None
     turn_manager: TurnManager = field(default_factory=TurnManager)
     playback_tracker: PlaybackTracker | None = None
     interruption_manager: InterruptionManager = field(default_factory=InterruptionManager)
@@ -135,6 +154,10 @@ class SessionRecord:
     worker: asyncio.Task[None] | None = None
     lock_owner: str = field(default_factory=lambda: str(uuid4()))
     context_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    client_count: int = 0
+    reap_task: asyncio.Task[None] | None = None
+    # form_id → {"tool", "title"} for forms bound to a write tool (set server-side when shown).
+    form_bindings: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -151,6 +174,17 @@ class SessionManager:
     voice_output: VoiceOutputConfig = field(default_factory=VoiceOutputConfig)
     _sessions: dict[str, SessionRecord] = field(default_factory=dict)
     dev_token_ttl_seconds: int = 3600
+    # agent_id → runtime (agent + tools). Sessions with an unregistered agent_id use
+    # ``agent_runtime`` / ``tool_executor``.
+    agent_runtimes: dict[str, AgentRuntime] = field(default_factory=dict)
+    # Optional per-session choice (e.g. a tenant's own agent, tools and model key); returning
+    # ``None`` falls back to ``agent_runtimes`` / ``agent_runtime``.
+    runtime_resolver: Callable[[SessionRecord], AgentRuntime | None] | None = None
+    # Session with no connected client (never connected, or every tab closed) is ended after
+    # this grace; a reconnect inside it keeps the session. <= 0 disables reaping.
+    idle_grace_seconds: float = field(
+        default_factory=lambda: float(os.environ.get("RELAY_SESSION_GRACE_SECONDS", "60"))
+    )
 
     @staticmethod
     def _utterance_commit_delay_ms() -> float:
@@ -173,6 +207,39 @@ class SessionManager:
             return incoming if len(incoming) >= len(prev) else prev
         return f"{prev} {incoming}".strip()
 
+    def _runtime_for(self, session: SessionRecord) -> AgentRuntime:
+        if self.runtime_resolver is not None:
+            resolved = self.runtime_resolver(session)
+            if resolved is not None:
+                return resolved
+        return self.agent_runtimes.get(session.agent_id, self.agent_runtime)
+
+    def speech_keyterms_for(self, session_id: str) -> tuple[str, ...]:
+        """Key terms speech recognition should listen for in this session (its agent's)."""
+        session = self._sessions.get(session_id)
+        if session is None:
+            return ()
+        return tuple(getattr(self._runtime_for(session), "speech_keyterms", ()) or ())
+
+    def _tools_for(self, session: SessionRecord) -> RegistryToolExecutor | None:
+        executor = self._runtime_for(session).tool_executor or self.tool_executor
+        if executor is not None and executor.hitl_for_session is None:
+            # Side-effecting tools run only with a granted approval from this session.
+            executor.hitl_for_session = self._hitl_for_session
+        return executor
+
+    def _hitl_for_session(self, session_id: str) -> HITLManager | None:
+        session = self._sessions.get(session_id)
+        return session.hitl_manager if session is not None else None
+
+    def _enqueue_followup_turn(self, session: SessionRecord, text: str) -> None:
+        """Queue an agent turn (e.g. after an approval decision) without waiting for it."""
+        if session.ended:
+            return
+        done: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        done.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+        session.queue.put_nowait((_CommandType.USER_TEXT, _UserTextCommand(text=text, done=done)))
+
     def _next_sequence(self, session: SessionRecord) -> int:
         seq = session.sequence
         session.sequence += 1
@@ -188,7 +255,71 @@ class SessionManager:
         )
 
     async def _publish(self, session: SessionRecord, event: RelayEvent) -> None:
+        if event.type == EventType.ACTION_REQUESTED and event.payload.get("action") == PRESENT_UI_ACTION:
+            self._remember_form_bindings(session, event.payload.get("params") or {})
+            self._remember_open_forms(session, event.payload.get("params") or {})
         await self.event_gateway.publish(event)
+
+    @staticmethod
+    def _remember_form_bindings(session: SessionRecord, params: dict[str, Any]) -> None:
+        """Bind shown forms to their write tool here, so the client cannot pick the tool."""
+        for surface in params.get("surfaces") or []:
+            if isinstance(surface, dict) and surface.get("kind") == "form" and surface.get("submit_tool"):
+                session.form_bindings[str(surface.get("id"))] = {
+                    "tool": str(surface["submit_tool"]),
+                    "title": str(surface.get("title") or ""),
+                }
+
+    @staticmethod
+    def _remember_open_forms(session: SessionRecord, params: dict[str, Any]) -> None:
+        """Track the forms on screen so values the user gives in chat can be filled into them."""
+        forms = session.context.open_forms
+        if params.get("replace", True):
+            forms.clear()
+        for form in open_forms_from_present_ui(params):
+            forms.pop(form["id"], None)
+            forms[form["id"]] = form
+        while len(forms) > MAX_OPEN_FORMS:
+            forms.pop(next(iter(forms)))
+
+    async def _save_bound_form(
+        self, session: SessionRecord, form_id: str, binding: dict[str, str], payload: dict[str, Any]
+    ) -> None:
+        """A submitted tool-bound form is the user's approval: run the tool, then confirm."""
+        raw = payload.get("values") if isinstance(payload.get("values"), dict) else {}
+        values = {
+            str(k): (v.strip() if isinstance(v, str) else v)
+            for k, v in raw.items()
+            if v is not None and not (isinstance(v, str) and not v.strip())
+        }
+        title = binding.get("title") or str(payload.get("title") or "form")
+        record = session.hitl_manager.register_request(
+            tool_name=binding["tool"],
+            arguments=values,
+            summary=f'Submitted form "{title}"',
+            followup=True,
+            form_id=form_id,
+        )
+        session.hitl_manager.grant(record.approval_id, auth_proof="form_submit")
+        await self._publish(
+            session,
+            RelayEvent(
+                type=EventType.APPROVAL_GRANTED,
+                metadata=self._base_metadata(session, source="client"),
+                payload={
+                    "approval_id": record.approval_id,
+                    "tool_name": record.tool_name,
+                    "end_user_id": (session.end_user or {}).get("id"),
+                    "form_id": form_id,
+                    "via": "form_submit",
+                    "lifecycle_stage": record.lifecycle_stage.value,
+                },
+            ),
+        )
+        if not await self._execute_hitl_commit(session, record.approval_id):
+            session.form_bindings[form_id] = binding  # failed: the user may fix the form and retry
+        else:
+            session.context.open_forms.pop(form_id, None)
 
     async def _run_session_actor(self, session: SessionRecord) -> None:
         while True:
@@ -257,6 +388,11 @@ class SessionManager:
                     await self._apply_stt_final_endpoint(session)
                     if not payload.done.done():
                         payload.done.set_result(None)
+            except asyncio.CancelledError:
+                done = getattr(payload, "done", None)
+                if done is not None and not done.done():
+                    done.set_exception(RuntimeError("session ended"))
+                raise
             except Exception:
                 logger.exception("session actor error session_id=%s", session.session_id)
                 done = getattr(payload, "done", None)
@@ -327,21 +463,28 @@ class SessionManager:
         async def emit_agent_event(event: RelayEvent) -> bool:
             return await self._emit_agent_event(session, event)
 
-        assistant_text = await self.agent_runtime.run_text_turn(
-            session_id=session.session_id,
-            turn_id=turn_id,
-            user_text=text,
-            context=session.context,
-            base_metadata=lambda source="agent_runtime": next_meta(source=source),
-            publish=lambda event: self._publish(session, event),
-            include_user_transcript=True,
-            action_router=session.action_router,
-            emit_agent_event=emit_agent_event,
-        )
-
-        await self._speak_assistant_if_voice_connected(
-            session, turn_id=turn_id, assistant_text=assistant_text
-        )
+        try:
+            assistant_text = await self._runtime_for(session).run_text_turn(
+                session_id=session.session_id,
+                turn_id=turn_id,
+                user_text=text,
+                context=session.context,
+                base_metadata=lambda source="agent_runtime": next_meta(source=source),
+                publish=lambda event: self._publish(session, event),
+                include_user_transcript=True,
+                action_router=session.action_router,
+                emit_agent_event=emit_agent_event,
+            )
+            await self._speak_assistant_if_voice_connected(
+                session, turn_id=turn_id, assistant_text=assistant_text
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # A failed model/tool call must not leave the turn open: that would reject every
+            # later message. Report it, cancel the response, and still complete the turn.
+            logger.exception("text turn failed session_id=%s turn_id=%s", session.session_id, turn_id)
+            await self._publish_turn_failure(session, turn_id=turn_id)
 
         await self._publish(
             session,
@@ -354,6 +497,32 @@ class SessionManager:
             ),
         )
         session.turn_manager.complete_turn(turn_id)
+
+    async def _publish_turn_failure(self, session: SessionRecord, *, turn_id: str) -> None:
+        meta = self._base_metadata(session, source="session_manager").model_copy(
+            update={"turn_id": turn_id}
+        )
+        await self._publish(
+            session,
+            RelayEvent(
+                type=EventType.RESPONSE_CANCELLED,
+                metadata=meta,
+                payload={"reason": "turn_failed"},
+            ),
+        )
+        await self._publish(
+            session,
+            RelayEvent(
+                type=EventType.SESSION_ERROR,
+                metadata=self._base_metadata(session, source="session_manager").model_copy(
+                    update={"turn_id": turn_id}
+                ),
+                payload={
+                    "code": "turn_failed",
+                    "message": "The assistant couldn't complete that request. Please try again.",
+                },
+            ),
+        )
 
     async def _speak_assistant_if_voice_connected(
         self,
@@ -468,12 +637,20 @@ class SessionManager:
                 arguments=arguments,
                 summary=summary,
                 approval_id=str(existing_id) if existing_id else None,
+                verify_tool=str(event.payload.get("verify_tool") or ""),
+                verify_arguments=dict(event.payload.get("verify_arguments") or {}),
+                followup=bool(event.payload.get("followup")),
             )
+            public = {
+                k: v
+                for k, v in event.payload.items()
+                if k not in ("verify_tool", "verify_arguments", "followup")
+            }
             enriched = RelayEvent(
                 type=event.type,
                 metadata=event.metadata,
                 payload={
-                    **event.payload,
+                    **public,
                     "approval_id": record.approval_id,
                     "tool_name": record.tool_name,
                     "arguments": record.arguments,
@@ -523,7 +700,7 @@ class SessionManager:
                 )
                 await self._publish(session, conflict)
                 await self._publish(session, event)
-                conflict_followups = await self.agent_runtime.agent.handle_runtime_event(
+                conflict_followups = await self._runtime_for(session).agent.handle_runtime_event(
                     session.session_id,
                     event=conflict,
                     context={
@@ -556,7 +733,7 @@ class SessionManager:
                 name=payload.name,
                 result=payload.result,
             )
-            session.action_router.resolve(payload.action_id, "applied")
+            session.action_router.resolve(payload.action_id, "applied", payload.result)
         else:
             event = ActionRouter.failed_event(
                 metadata=meta,
@@ -564,7 +741,9 @@ class SessionManager:
                 name=payload.name,
                 reason=payload.reason or "failed",
             )
-            session.action_router.resolve(payload.action_id, "failed")
+            session.action_router.resolve(
+                payload.action_id, "failed", {"reason": payload.reason or "failed"}
+            )
         await self._publish(session, event)
 
     async def _process_client_app_event(
@@ -575,6 +754,20 @@ class SessionManager:
             return
         if name == "approval.reject":
             await self._handle_approval_reject(session, payload)
+            return
+        if name == CLIENT_CAPABILITIES_EVENT:
+            session.context.client_actions = sanitize_client_actions(payload.get("actions"))
+            return
+        if name == FORM_SUBMIT_EVENT:
+            form_id = str(payload.get("form_id") or "")
+            binding = session.form_bindings.pop(form_id, None)
+            if binding is not None:
+                await self._save_bound_form(session, form_id, binding, payload)
+                return
+            session.context.open_forms.pop(form_id, None)
+            text = format_form_submission(payload)
+            if text:
+                await self._process_user_text(session, text)
             return
         await self._publish(
             session,
@@ -604,10 +797,15 @@ class SessionManager:
                 payload={
                     "approval_id": approval_id,
                     "tool_name": record.tool_name,
+                    "end_user_id": (session.end_user or {}).get("id"),
                     "lifecycle_stage": record.lifecycle_stage.value,
                 },
             ),
         )
+        if record.followup:
+            self._enqueue_followup_turn(
+                session, f"{ACTION_REJECTED_PREFIX} {record.summary or record.tool_name}"
+            )
 
     async def _handle_approval_grant(
         self, session: SessionRecord, payload: dict[str, Any]
@@ -638,16 +836,19 @@ class SessionManager:
                 payload={
                     "approval_id": approval_id,
                     "tool_name": record.tool_name,
+                    "end_user_id": (session.end_user or {}).get("id"),
                     "lifecycle_stage": record.lifecycle_stage.value,
                 },
             ),
         )
         await self._execute_hitl_commit(session, approval_id)
 
-    async def _execute_hitl_commit(self, session: SessionRecord, approval_id: str) -> None:
+    async def _execute_hitl_commit(self, session: SessionRecord, approval_id: str) -> bool:
+        """Run an approved tool (+ optional verify). Returns whether it was saved and verified."""
         record = session.hitl_manager.get(approval_id)
-        if record is None or self.tool_executor is None:
-            return
+        tool_executor = self._tools_for(session)
+        if record is None or tool_executor is None:
+            return False
         session.hitl_manager.mark_commit(approval_id)
         commit_id = str(uuid4())
         await emit_trace_span(
@@ -668,6 +869,7 @@ class SessionManager:
                     "commit_id": commit_id,
                     "approval_id": approval_id,
                     "tool_name": record.tool_name,
+                    "form_id": record.form_id,
                     "lifecycle_stage": HitlLifecycleStage.COMMIT.value,
                 },
             ),
@@ -677,7 +879,7 @@ class SessionManager:
         async def publish(event: RelayEvent) -> None:
             await self._publish(session, event)
 
-        commit_result = await self.tool_executor.execute(
+        commit_result = await tool_executor.execute(
             session.session_id,
             tool_name=record.tool_name,
             arguments=dict(record.arguments),
@@ -695,23 +897,34 @@ class SessionManager:
                         "message": "commit_failed",
                         "error": commit_result.get("error"),
                         "commit_id": commit_id,
+                        "approval_id": approval_id,
+                        "tool_name": record.tool_name,
+                        "form_id": record.form_id,
                     },
                 ),
             )
-            return
+            if record.followup:
+                self._enqueue_followup_turn(
+                    session,
+                    f"{ACTION_FAILED_PREFIX} {record.summary or record.tool_name}: "
+                    f"{commit_result.get('error')}",
+                )
+            return False
 
         backend_commit_id = str(commit_result.get("commit_id") or commit_id)
-        verify_result = await self.tool_executor.execute(
-            session.session_id,
-            tool_name="verify_correction",
-            arguments={
-                "mortgage_id": record.arguments.get("mortgage_id"),
-                "commit_id": backend_commit_id,
-            },
-            publish=publish,
-            base_metadata=base_meta,
-        )
-        verified = bool(verify_result.get("verified"))
+        if record.verify_tool:
+            verify_result = await tool_executor.execute(
+                session.session_id,
+                tool_name=record.verify_tool,
+                arguments={**record.verify_arguments, "commit_id": backend_commit_id},
+                publish=publish,
+                base_metadata=base_meta,
+            )
+            verified = bool(verify_result.get("verified"))
+        else:
+            # No verify step: a commit without an error is the confirmation.
+            verify_result = commit_result
+            verified = True
         session.hitl_manager.mark_verified(approval_id)
         await emit_trace_span(
             publish=publish,
@@ -734,37 +947,55 @@ class SessionManager:
                 payload={
                     "commit_id": backend_commit_id,
                     "approval_id": approval_id,
+                    "tool_name": record.tool_name,
+                    "form_id": record.form_id,
                     "verified": verified,
-                    "mortgage": verify_result.get("mortgage"),
+                    "result": commit_result,
+                    # What the verify tool returned (absent when the approval had no verify step).
+                    "verify_result": verify_result if record.verify_tool else None,
                     "lifecycle_stage": HitlLifecycleStage.VERIFY.value,
                 },
             ),
         )
         if verified:
-            async with session.context_lock:
-                await self._apply_post_commit_state(session, verify_result, record.arguments)
+            # Caller (approval.grant handling) already holds session.context_lock; asyncio.Lock is
+            # not re-entrant, so taking it again here would deadlock.
+            await self._apply_post_commit_state(
+                session,
+                tool_name=record.tool_name,
+                arguments=record.arguments,
+                commit_result=commit_result,
+                verify_result=verify_result,
+            )
+        if record.followup:
+            outcome = json.dumps(commit_result, default=str)[:1500]
+            self._enqueue_followup_turn(
+                session,
+                f"{ACTION_APPROVED_PREFIX} {record.summary or record.tool_name}. Result: {outcome}",
+            )
+        return verified
 
     async def _apply_post_commit_state(
         self,
         session: SessionRecord,
+        *,
+        tool_name: str,
+        arguments: dict[str, Any],
+        commit_result: dict[str, Any],
         verify_result: dict[str, Any],
-        commit_arguments: dict[str, Any],
     ) -> None:
-        mortgage = verify_result.get("mortgage")
-        if not isinstance(mortgage, dict):
+        """Let the session's agent update shared state after a saved change (it knows the domain;
+        the runtime does not)."""
+        new_state = self._runtime_for(session).agent.state_after_commit(
+            state=dict(session.context.state),
+            tool_name=tool_name,
+            arguments=arguments,
+            commit_result=commit_result,
+            verify_result=verify_result,
+        )
+        if new_state is None:
             return
-        state = dict(session.context.state)
-        draft = dict(state.get("correction_draft") or {})
-        draft["status"] = "committed"
-        draft["mortgage_id"] = commit_arguments.get("mortgage_id") or draft.get("mortgage_id")
-        state["correction_draft"] = draft
-        state["screen"] = "mortgage_case"
-        state["workflow"] = "correction_committed"
-        state["case_summary"] = {
-            **dict(state.get("case_summary") or {}),
-            **mortgage,
-        }
-        session.context.apply_snapshot(state)
+        session.context.apply_snapshot(new_state)
         await self._publish_state_applied(
             session,
             source="hitl_manager",
@@ -1423,7 +1654,7 @@ class SessionManager:
 
         assistant_text = ""
         try:
-            assistant_text = await self.agent_runtime.run_streaming_turn(
+            assistant_text = await self._runtime_for(session).run_streaming_turn(
                 session_id=session.session_id,
                 turn_id=turn_id,
                 user_text=user_text,
@@ -1496,6 +1727,7 @@ class SessionManager:
         *,
         project_id: str,
         agent_id: str,
+        end_user: dict[str, Any] | None = None,
     ) -> tuple[SessionRecord, list[RelayEvent]]:
         session_id = str(uuid4())
         trace_id = self.trace_manager.new_trace_id()
@@ -1509,6 +1741,7 @@ class SessionManager:
             dev_token=dev_token,
             token_expires_at=expires,
             playback_tracker=PlaybackTracker(session_id=session_id),
+            end_user=dict(end_user) if end_user else None,
         )
         self._attach_playback_handlers(session)
         if self.session_lock is not None:
@@ -1519,11 +1752,12 @@ class SessionManager:
                 raise RuntimeError("session lock not acquired")
         self._sessions[session_id] = session
         session.worker = asyncio.create_task(self._run_session_actor(session))
+        self._schedule_reap(session)
 
         started = RelayEvent(
             type=EventType.SESSION_STARTED,
             metadata=self._base_metadata(session, source="session_manager"),
-            payload=minimal_payload_for(EventType.SESSION_STARTED),
+            payload={**minimal_payload_for(EventType.SESSION_STARTED), "agent_id": session.agent_id},
         )
         ready = RelayEvent(
             type=EventType.SESSION_READY,
@@ -1587,6 +1821,11 @@ class SessionManager:
             async with session.context_lock:
                 await self._process_client_app_event(session, name, dict(payload))
             return
+        if name == CLIENT_CAPABILITIES_EVENT:
+            # Not queued behind a running turn: after a screen action (e.g. opening another page)
+            # the app advertises that screen's actions, and the same turn's next round uses them.
+            session.context.client_actions = sanitize_client_actions(payload.get("actions"))
+            return
         done: asyncio.Future[None] = asyncio.get_running_loop().create_future()
         await session.queue.put(
             (_CommandType.CLIENT_APP_EVENT, _ClientAppEvent(name=name, payload=payload, done=done))
@@ -1641,19 +1880,68 @@ class SessionManager:
             raise RuntimeError("realtime transport not configured")
         await self.realtime_transport.patch_ice(session_id, pc_id=pc_id, candidates=candidates)
 
-    async def end_session(self, session_id: str) -> None:
+    def client_attached(self, session_id: str) -> None:
+        """A client (WebSocket) connected; cancels a pending reap."""
+        session = self._sessions.get(session_id)
+        if not session or session.ended:
+            return
+        session.client_count += 1
+        self._cancel_reap(session)
+
+    def client_detached(self, session_id: str) -> None:
+        """A client disconnected; the last one leaving starts the grace timer."""
+        session = self._sessions.get(session_id)
+        if not session or session.ended:
+            return
+        session.client_count = max(0, session.client_count - 1)
+        if session.client_count == 0:
+            self._schedule_reap(session)
+
+    def _schedule_reap(self, session: SessionRecord) -> None:
+        if self.idle_grace_seconds <= 0:
+            return
+        self._cancel_reap(session)
+
+        async def _reap() -> None:
+            await asyncio.sleep(self.idle_grace_seconds)
+            if session.client_count == 0 and not session.ended:
+                logger.info("ending abandoned session session_id=%s", session.session_id)
+                await self.end_session(session.session_id, abort_in_flight=True)
+
+        session.reap_task = asyncio.create_task(_reap())
+
+    @staticmethod
+    def _cancel_reap(session: SessionRecord) -> None:
+        task = session.reap_task
+        session.reap_task = None
+        if task is not None and task is not asyncio.current_task() and not task.done():
+            task.cancel()
+
+    async def end_session(self, session_id: str, *, abort_in_flight: bool = False) -> None:
+        """End a session. ``abort_in_flight`` cancels a running turn instead of letting it finish."""
         session = self._sessions.get(session_id)
         if not session or session.ended:
             return
         if self.realtime_transport is not None:
             await self.realtime_transport.disconnect(session_id)
         session.ended = True
+        self._cancel_reap(session)
+        self._cancel_utterance_commit_timer(session)
+        self._cancel_stt_final_endpoint_timer(session)
         if session.voice_turn_cancel is not None:
             session.voice_turn_cancel.cancel()
         await self._await_voice_response_task(session)
-        await session.queue.put((_CommandType.SHUTDOWN, None))
-        if session.worker is not None:
-            await session.worker
+        if abort_in_flight and session.worker is not None:
+            session.worker.cancel()
+            try:
+                await session.worker
+            except asyncio.CancelledError:
+                pass
+            self._fail_queued_commands(session)
+        else:
+            await session.queue.put((_CommandType.SHUTDOWN, None))
+            if session.worker is not None:
+                await session.worker
         if self.session_lock is not None:
             await self.session_lock.release(session_id, owner=session.lock_owner)
         ended = RelayEvent(
@@ -1662,6 +1950,16 @@ class SessionManager:
             payload=minimal_payload_for(EventType.SESSION_ENDED),
         )
         await self._publish(session, ended)
+        self._sessions.pop(session_id, None)
+
+    @staticmethod
+    def _fail_queued_commands(session: SessionRecord) -> None:
+        while not session.queue.empty():
+            _cmd, payload = session.queue.get_nowait()
+            done = getattr(payload, "done", None)
+            if done is not None and not done.done():
+                done.set_exception(RuntimeError("session ended"))
+            session.queue.task_done()
 
     def validate_dev_token(self, session_id: str, token: str) -> bool:
         session = self._sessions.get(session_id)

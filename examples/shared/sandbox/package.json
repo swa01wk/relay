@@ -1,0 +1,13 @@
+{
+  "name": "@relay/example-sandbox",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Experience Center sandboxes for the Relay example apps: per-visitor sessions and data reset (server-side route handlers).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types src/index.test.ts"
+  }
+}

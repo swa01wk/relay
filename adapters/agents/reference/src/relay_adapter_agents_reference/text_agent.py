@@ -53,7 +53,12 @@ class ReferenceTextAgent(AgentAdapter):
             messages.append({"role": item["role"], "content": item["content"]})
 
         provider = self._model_router.get_provider()
+        record_usage = context.get("record_model_usage")
         async for chunk in provider.stream_completion(session_id, messages=messages):
+            if chunk.get("type") == "usage":
+                if record_usage is not None:
+                    await record_usage(chunk)
+                continue
             token = str(chunk.get("text", ""))
             if token:
                 yield token
@@ -77,6 +82,6 @@ def _default_system_prompt() -> str:
     if bundled.is_file():
         return bundled.read_text(encoding="utf-8").strip()
     return (
-        "You are a helpful mortgage servicing reference assistant. "
-        "Answer briefly and professionally. You do not have access to tools yet."
+        "You are a helpful assistant. Answer briefly and professionally. "
+        "You do not have access to tools or account data."
     )

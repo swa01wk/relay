@@ -18,9 +18,32 @@ class ActionRouter:
     """Per-session pending UI actions (client executes rendering)."""
 
     _pending: dict[str, asyncio.Future[ActionOutcome]] = field(default_factory=dict)
+    _results: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def new_action_id(self) -> str:
         return str(uuid4())
+
+    async def request_with_result(
+        self,
+        *,
+        publish: Any,
+        metadata: RelayEventMetadata,
+        name: str,
+        params: dict[str, Any],
+        timeout_seconds: float = 15.0,
+    ) -> tuple[ActionOutcome, dict[str, Any]]:
+        """Request an action and wait for the client's outcome plus its result / failure reason."""
+        holder: dict[str, str] = {}
+        outcome = await self.request(
+            publish=publish,
+            metadata=metadata,
+            name=name,
+            params=params,
+            wait=True,
+            timeout_seconds=timeout_seconds,
+            _action_id_out=holder,
+        )
+        return outcome or "timeout", self._results.pop(holder.get("action_id", ""), {})
 
     async def request(
         self,
@@ -31,8 +54,11 @@ class ActionRouter:
         params: dict[str, Any],
         wait: bool = False,
         timeout_seconds: float = 15.0,
+        _action_id_out: dict[str, str] | None = None,
     ) -> ActionOutcome | None:
         action_id = self.new_action_id()
+        if _action_id_out is not None:
+            _action_id_out["action_id"] = action_id
         event = RelayEvent(
             type=EventType.ACTION_REQUESTED,
             metadata=metadata.model_copy(update={"correlation_id": action_id}),
@@ -55,9 +81,13 @@ class ActionRouter:
             self._pending.pop(action_id, None)
             return "timeout"
 
-    def resolve(self, action_id: str, outcome: ActionOutcome) -> None:
+    def resolve(
+        self, action_id: str, outcome: ActionOutcome, result: dict[str, Any] | None = None
+    ) -> None:
         future = self._pending.pop(action_id, None)
         if future is not None and not future.done():
+            if result:
+                self._results[action_id] = dict(result)
             future.set_result(outcome)
 
     @staticmethod

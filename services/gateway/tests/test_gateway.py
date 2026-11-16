@@ -64,3 +64,48 @@ def test_p01_tc_001_websocket_text_turn(app):
     assert "TRANSCRIPT_FINAL" in types
     assert "RESPONSE_COMPLETED" in types
     assert "TURN_COMPLETED" in types
+
+
+def test_metrics_endpoint_is_off_by_default_and_token_protected(app, monkeypatch):
+    monkeypatch.delenv("RELAY_METRICS_ENABLED", raising=False)
+    monkeypatch.delenv("RELAY_METRICS_TOKEN", raising=False)
+    with TestClient(app) as client:
+        assert client.get("/metrics").status_code == 404
+
+        monkeypatch.setenv("RELAY_METRICS_TOKEN", "s3cret")
+        assert client.get("/metrics").status_code == 401
+        assert client.get("/metrics", headers={"Authorization": "Bearer wrong"}).status_code == 401
+        ok = client.get("/metrics", headers={"Authorization": "Bearer s3cret"})
+        assert ok.status_code == 200 and "relay_sessions_active" in ok.text
+
+        monkeypatch.delenv("RELAY_METRICS_TOKEN")
+        monkeypatch.setenv("RELAY_METRICS_ENABLED", "1")
+        client.post("/dev/sessions", json={"project_id": "p", "agent_id": "anything-a-client-sends"})
+        text = client.get("/metrics").text
+        # Client-supplied agent ids are not used as label values.
+        assert 'relay_sessions_total{agent="default",event="started"}' in text
+        assert "anything-a-client-sends" not in text
+
+
+def test_admin_inspector_and_audit_need_the_admin_token(app, monkeypatch):
+    monkeypatch.delenv("RELAY_ADMIN_TOKEN", raising=False)
+    with TestClient(app) as client:
+        assert client.get("/admin").status_code == 404
+        assert client.get("/admin/sessions").status_code == 404
+
+        monkeypatch.setenv("RELAY_ADMIN_TOKEN", "adm1n")
+        page = client.get("/admin")
+        assert page.status_code == 200 and "Relay inspector" in page.text and "adm1n" not in page.text
+        assert client.get("/admin/sessions").status_code == 401
+        assert client.get("/admin/audit", headers={"Authorization": "Bearer nope"}).status_code == 401
+
+        auth = {"Authorization": "Bearer adm1n"}
+        created = client.post("/dev/sessions", json={"project_id": "p", "agent_id": "sales-crm"}).json()
+        sessions = client.get("/admin/sessions", headers=auth).json()["sessions"]
+        mine = next(s for s in sessions if s["session_id"] == created["session_id"])
+        assert mine["agent_id"] == "sales-crm" and mine["live"] is True
+        # The admin token reads any session's timeline; no session token involved.
+        timeline = client.get(f"/admin/sessions/{created['session_id']}", headers=auth).json()
+        assert timeline["event_count"] >= 2 and timeline["audit"] == []
+        assert client.get("/admin/sessions/00000000-0000-0000-0000-000000000000", headers=auth).status_code == 404
+        assert isinstance(client.get("/admin/audit", headers=auth).json()["entries"], list)

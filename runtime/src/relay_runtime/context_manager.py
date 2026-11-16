@@ -15,6 +15,10 @@ class ContextManager:
     state_version: int = 0
     active_turn_id: str | None = None
     tool_results: list[dict[str, Any]] = field(default_factory=list)
+    # UI actions the client app advertised (name, description, parameters JSON schema).
+    client_actions: list[dict[str, Any]] = field(default_factory=list)
+    # Forms the agent showed and the user has not submitted yet: form_id → {"id", "title", "fields", …}.
+    open_forms: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def append_user(self, text: str) -> None:
         self.messages.append({"role": "user", "content": text})

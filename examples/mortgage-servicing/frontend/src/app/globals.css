@@ -3,20 +3,60 @@
 @tailwind utilities;
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
+  /* Servicing console: cool neutrals, deep teal brand, clear status colours. */
+  --background: 210 20% 97.5%;
+  --foreground: 222 30% 12%;
   --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --border: 214.3 31.8% 91.4%;
-  --radius: 0.5rem;
+  --card-foreground: 222 30% 12%;
+  --primary: 184 70% 26%;
+  --primary-foreground: 0 0% 100%;
+  --primary-soft: 184 55% 94%;
+  --muted: 214 24% 95%;
+  --muted-foreground: 218 12% 44%;
+  --border: 216 20% 89%;
+  --success: 152 60% 32%;
+  --success-soft: 150 50% 94%;
+  --warning: 32 90% 38%;
+  --warning-soft: 40 95% 93%;
+  --danger: 0 68% 46%;
+  --danger-soft: 0 85% 96%;
+  --radius: 0.625rem;
+  --chart-1: 221 83% 53%;
+  --chart-2: 160 84% 39%;
+  --chart-3: 38 92% 50%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 0 72% 51%;
+  --chart-6: 190 90% 40%;
 }
 
 body {
   @apply bg-background text-foreground antialiased;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes relay-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.relay-pulse {
+  animation: relay-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-pulse,
+  .relay-panel-enter,
+  .relay-screen-enter {
+    animation: none;
+  }
 }
 
 @keyframes relay-panel-in {
@@ -36,4 +76,43 @@ body {
 
 .relay-screen-enter {
   animation: relay-panel-in 0.4s ease-out both;
+}
+
+/* Model-written markdown on the playground canvas (Tailwind preflight strips defaults). */
+.relay-markdown > * + * {
+  margin-top: 0.5rem;
+}
+.relay-markdown h1 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.relay-markdown h2,
+.relay-markdown h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.relay-markdown ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.relay-markdown ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.relay-markdown code {
+  border-radius: 0.25rem;
+  background: hsl(var(--muted));
+  padding: 0 0.25rem;
+}
+.relay-markdown table {
+  border-collapse: collapse;
+}
+.relay-markdown th,
+.relay-markdown td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+.relay-markdown a {
+  text-decoration: underline;
 }

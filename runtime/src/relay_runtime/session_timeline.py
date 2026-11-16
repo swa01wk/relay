@@ -8,6 +8,8 @@ from typing import Any
 from relay_protocol import EventType
 from relay_sdk import RelayEvent
 
+from relay_runtime.model_usage import summarize_usage
+
 
 def build_session_timeline(events: list[RelayEvent]) -> dict[str, Any]:
     """Join events, metrics, and TRACE_LINK spans into a stakeholder-friendly timeline."""
@@ -19,6 +21,7 @@ def build_session_timeline(events: list[RelayEvent]) -> dict[str, Any]:
             "metrics": [],
             "spans": [],
             "waterfall_ms": {},
+            "usage": summarize_usage([]),
             "hitl": [],
         }
 
@@ -75,6 +78,7 @@ def build_session_timeline(events: list[RelayEvent]) -> dict[str, Any]:
         "metrics": metrics,
         "spans": spans,
         "waterfall_ms": waterfall,
+        "usage": summarize_usage(metrics),
         "hitl": hitl,
     }
 

@@ -7,13 +7,37 @@ from typing import Any
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from mortgage_tools_api import logic
+from mortgage_tools_api import logic, sandbox
 
 app = FastAPI(title="Mortgage tools API", version="0.1.0")
 
 
+class SandboxMiddleware:
+    """Runs each request on the caller's sandbox data (``sandbox.py``): the id comes from the
+    ``X-Relay-User`` header Relay sends with tool calls. Plain ASGI, so the context variable is
+    visible to the endpoint."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        with sandbox.use(sandbox.id_from_user_header(headers.get("x-relay-user"))):
+            await self.app(scope, receive, send)
+
+
+app.add_middleware(SandboxMiddleware)
+
+
 class SearchCustomerRequest(BaseModel):
     query: str = Field(min_length=1)
+
+
+class ListCustomersRequest(BaseModel):
+    limit: int = Field(default=50, ge=1, le=200)
 
 
 class GetMortgageRequest(BaseModel):
@@ -70,9 +94,22 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/sandbox/reset")
+async def reset_sandbox(x_sandbox_id: str | None = Header(default=None)) -> dict[str, Any]:
+    """Experience Center: throw away one visitor's changes."""
+    if not sandbox.reset(x_sandbox_id):
+        raise HTTPException(status_code=404, detail="no such sandbox")
+    return {"reset": True}
+
+
 @app.post("/tools/search_customer")
 async def search_customer(body: SearchCustomerRequest) -> dict[str, Any]:
     return logic.search_customer(body.query)
+
+
+@app.post("/tools/list_customers")
+async def list_customers(body: ListCustomersRequest) -> dict[str, Any]:
+    return logic.list_customers(limit=body.limit)
 
 
 @app.post("/tools/get_mortgage")

@@ -16,17 +16,21 @@ build/
 htmlcov/
 .coverage
 
-# Next.js
-examples/mortgage-servicing/frontend/.next/
-examples/mortgage-servicing/frontend/out/
+# Next.js (any app)
+.next/
+out/
 
-# Env
+# Env: real keys are never committed; *.example files are templates and are
 .env
-.env.local
-.env*.local
+.env.*
+!.env.example
+!.env.*.example
 
 # IDE
 .idea/
 .vscode/
 *.swp
 .DS_Store
+
+# Sales CRM example database (SQLite)
+crm.db

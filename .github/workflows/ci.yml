@@ -15,13 +15,17 @@ jobs:
           python-version: "3.12"
       - name: Install packages
         run: |
-          pip install -e packages/protocol -e packages/python-sdk -e runtime \
+          pip install -e "packages/protocol[dev]" -e packages/python-sdk -e runtime \
             -e adapters/realtime/pipecat \
             -e adapters/models/openai -e adapters/agents/reference \
             -e adapters/tools/http \
+            -e adapters/persistence/postgres -e adapters/persistence/redis \
+            -e adapters/speech/silero -e adapters/speech/deepgram \
+            -e adapters/observability/prometheus -e adapters/observability/otel \
             -e examples/mortgage-servicing/tools \
             -e examples/mortgage-servicing/agent \
-            -e adapters/persistence/postgres -e adapters/persistence/redis \
+            -e examples/sales-crm/tools \
+            -e examples/storefront/tools -e examples/bus-booking/tools -e examples/stays/tools \
             -e "services/gateway[dev]"
       - name: Ruff (syntax / import order via compileall)
         run: python -m compileall packages/protocol runtime services/gateway
@@ -33,6 +37,8 @@ jobs:
         run: pytest packages/protocol/tests -q
       - name: Adapter realtime tests
         run: pytest adapters/realtime/pipecat/tests -q
+      - name: Observability adapter tests (Prometheus metrics, OpenTelemetry traces)
+        run: pytest adapters/observability -q
       - name: Runtime tests
         run: pytest runtime/tests -q
       - name: Gateway tests
@@ -59,13 +65,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # pnpm version comes from "packageManager" in package.json (the action rejects two versions).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile || pnpm install
       - run: pnpm --filter @relay/mortgage-frontend lint
-      - run: pnpm --filter @relay/web-sdk test
+      - run: pnpm --filter @sumukhj1219-wkt-org/relay-web-sdk test
+      - run: pnpm --filter @sumukhj1219-wkt-org/relay-cli test

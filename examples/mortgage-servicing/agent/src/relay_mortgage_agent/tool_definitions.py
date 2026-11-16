@@ -27,6 +27,22 @@ def register_mortgage_tools(registry: ToolRegistry) -> None:
     )
     registry.register(
         ToolDefinition(
+            name="list_customers",
+            classification=ToolClassification.READ_ONLY,
+            description="List all customers with their mortgages (no search term needed)",
+            input_schema={
+                "type": "object",
+                "properties": {"limit": {"type": "integer", "minimum": 1}},
+            },
+            output_schema={
+                "type": "object",
+                "required": ["customers"],
+                "properties": {"customers": {"type": "array"}},
+            },
+        )
+    )
+    registry.register(
+        ToolDefinition(
             name="get_mortgage",
             classification=ToolClassification.READ_ONLY,
             input_schema={
