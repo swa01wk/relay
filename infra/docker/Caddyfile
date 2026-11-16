@@ -1,0 +1,58 @@
+# HTTPS for the production stack (docker-compose.prod.yml). Caddy gets and renews the
+# certificates itself; every name below needs a DNS record pointing at this server.
+# DOMAIN and ACME_EMAIL come from .env.prod.
+
+{
+	email {$ACME_EMAIL}
+}
+
+(common) {
+	encode zstd gzip
+	header -Server
+}
+
+# Gateway: API, CLI sign-in, session WebSocket, voice (WebRTC offer), /admin, /metrics.
+api.{$DOMAIN} {
+	import common
+	# Dev sessions (no key, caller names the project) and their timelines are only for the
+	# example apps' servers inside the Docker network.
+	@dev path /dev /dev/*
+	respond @dev 404
+	reverse_proxy gateway:8080
+}
+
+# Website + Experience Center.
+{$DOMAIN} {
+	import common
+	reverse_proxy website:3000
+}
+
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}
+
+# Sandbox example apps (framed by the website's /try pages).
+crm.{$DOMAIN} {
+	import common
+	reverse_proxy crm-web:3000
+}
+
+mortgage.{$DOMAIN} {
+	import common
+	reverse_proxy mortgage-web:3000
+}
+
+shop.{$DOMAIN} {
+	import common
+	reverse_proxy shop-web:3000
+}
+
+bus.{$DOMAIN} {
+	import common
+	reverse_proxy bus-web:3000
+}
+
+stays.{$DOMAIN} {
+	import common
+	reverse_proxy stays-web:3000
+}

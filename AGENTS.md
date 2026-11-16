@@ -24,7 +24,7 @@ Relay is a domain-agnostic platform for realtime voice + text AI assistants that
 | `examples/shared/sandbox/` | `@relay/example-sandbox` — Experience Center helpers for example apps' servers (per-visitor session + reset) | TypeScript |
 | `apps/website/` | Marketing site + Experience Center (`/try`, iframes the examples in sandbox mode); gallery from `lib/examples.ts` — see [docs/experience-center.md](docs/experience-center.md) | TS |
 | `examples/mortgage-servicing/` | Custom Python agent example (deterministic routes, approve → commit → verify) | TS / Python |
-| `infra/docker/` | Compose stack, Dockerfiles, `.env`; `docker-compose.observability.yml` (optional Prometheus + Grafana) | — |
+| `infra/docker/` | Compose stack, Dockerfiles, `.env`; `docker-compose.observability.yml` (optional Prometheus + Grafana); production on one server: `docker-compose.prod.yml` + `Caddyfile` + `Dockerfile.web` (Next.js apps, standalone output via `RELAY_NEXT_STANDALONE=1`) + `.env.prod`, run with `infra/docker/prod.sh` — see [docs/deploying.md](docs/deploying.md) | — |
 | `infra/observability/` | Prometheus scrape config + alert rules, Grafana dashboard (a test checks they only use exported metrics) | YAML / JSON |
 | `plans/` | PRD phases, status, decisions, UAT scripts | Markdown |
 
@@ -45,6 +45,7 @@ pnpm --filter @relay/stays-frontend dev               # http://localhost:3006
 - After editing `infra/docker/.env`: `up -d --force-recreate gateway` (env is read at container creation).
 - The compose stack sets `RELAY_DEV_SESSIONS=1`, so the example apps start sessions without a key and use the gateway's own agents. To exercise the customer path (`R="node packages/cli/bin/relay.mjs"`): `$R login`, `$R secrets set openai`, `$R agents push <manifest>` (in compose a tools URL like `http://crm-tools:8091` is allowed), `$R keys create --kind publishable`, then set `NEXT_PUBLIC_RELAY_API_KEY` and the agent id in the app.
 - After editing `agents/*.yaml`: restart the gateway; check its log for `agent <id> loaded … (<n> tools)` or `agent manifest skipped: <reason>`.
+- Server deployment (everything behind Caddy, `/dev/*` blocked publicly, example apps use dev sessions inside the Docker network): [docs/deploying.md](docs/deploying.md). A new example app needs a `*-web` service in `docker-compose.prod.yml`, a Caddyfile site and its URL build arg on `website`.
 - Configuration variables, operator endpoints (`/admin`, `/metrics`), observability and custom Python agents: [docs/operating-the-gateway.md](docs/operating-the-gateway.md). The docs under `packages/web-sdk/` ship to customers on npm: keep them free of operator settings, repo paths and example domains (a test enforces it).
 
 Local Python environment (tests, running the gateway outside Docker):

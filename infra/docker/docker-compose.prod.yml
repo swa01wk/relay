@@ -1,0 +1,292 @@
+# Production stack on one server: the gateway (hosted service + example agents), the five
+# example tools services, the website and the five sandbox example apps, behind Caddy (HTTPS).
+#
+#   cp infra/docker/.env.prod.example infra/docker/.env.prod   # fill it in
+#   infra/docker/prod.sh up -d --build
+#
+# Only Caddy publishes ports (80, 443). Everything else is reachable inside this network only.
+# See docs/deploying.md.
+
+x-restart: &restart
+  restart: unless-stopped
+
+# Browser-visible settings, compiled into every web app's build.
+x-web-build-args: &web-build-args
+  NEXT_PUBLIC_GATEWAY_URL: https://api.${DOMAIN:?set DOMAIN in .env.prod}
+  NEXT_PUBLIC_RELAY_SANDBOX: "1"
+  RELAY_SANDBOX_FRAME_ANCESTORS: https://${DOMAIN} https://www.${DOMAIN}
+
+x-web-env: &web-env
+  # Example apps' servers start sessions on the gateway inside the network (dev sessions,
+  # which Caddy does not expose to the internet).
+  RELAY_GATEWAY_URL: http://gateway:8080
+  RELAY_SANDBOX_FRAME_ANCESTORS: https://${DOMAIN} https://www.${DOMAIN}
+
+services:
+  caddy:
+    <<: *restart
+    image: caddy:2.10-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env.prod}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - gateway
+      - website
+      - crm-web
+      - mortgage-web
+      - shop-web
+      - bus-web
+      - stays-web
+
+  redis:
+    <<: *restart
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    <<: *restart
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+      POSTGRES_DB: relay
+    volumes:
+      - relay-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay -d relay"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Example tools services (per-visitor sandbox data on) ---
+
+  mortgage-tools:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.mortgage-tools
+    environment:
+      MORTGAGE_SANDBOXES: "1"
+      MORTGAGE_COMMIT_TOKEN: ${RELAY_MORTGAGE_COMMIT_TOKEN:?set RELAY_MORTGAGE_COMMIT_TOKEN in .env.prod}
+    healthcheck: &tools-health
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  crm-tools:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.crm-tools
+    environment:
+      CRM_DB_PATH: /data/crm.db
+      CRM_SANDBOX_DIR: /data/sandboxes
+    volumes:
+      - crm-data:/data
+    healthcheck:
+      <<: *tools-health
+      test: ["CMD", "curl", "-f", "http://localhost:8091/health"]
+
+  shop-tools:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.shop-tools
+    environment:
+      SHOP_DB_PATH: /data/shop.db
+      SHOP_SANDBOX_DIR: /data/sandboxes
+    volumes:
+      - shop-data:/data
+    healthcheck:
+      <<: *tools-health
+      test: ["CMD", "curl", "-f", "http://localhost:8092/health"]
+
+  bus-tools:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.bus-tools
+    environment:
+      BUS_DB_PATH: /data/bus.db
+      BUS_SANDBOX_DIR: /data/sandboxes
+    volumes:
+      - bus-data:/data
+    healthcheck:
+      <<: *tools-health
+      test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
+
+  stays-tools:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.stays-tools
+    environment:
+      STAYS_DB_PATH: /data/stays.db
+      STAYS_SANDBOX_DIR: /data/sandboxes
+    volumes:
+      - stays-data:/data
+    healthcheck:
+      <<: *tools-health
+      test: ["CMD", "curl", "-f", "http://localhost:8094/health"]
+
+  # --- Gateway ---
+
+  gateway:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.gateway
+    env_file:
+      - .env.prod
+    # Fixed by this stack; your own settings (keys, sign-up, SMTP, tokens) go in .env.prod.
+    environment:
+      RELAY_GATEWAY_HOST: "0.0.0.0"
+      RELAY_GATEWAY_PORT: "8080"
+      RELAY_DATABASE_URL: postgresql://relay:${POSTGRES_PASSWORD}@postgres:5432/relay
+      RELAY_REDIS_URL: redis://redis:6379/0
+      RELAY_PUBLIC_URL: https://api.${DOMAIN}
+      # Caddy sets X-Forwarded-For; clients never reach the gateway directly.
+      RELAY_TRUST_PROXY_HEADERS: "1"
+      RELAY_SECRETS_KEY: ${RELAY_SECRETS_KEY:?set RELAY_SECRETS_KEY in .env.prod}
+      # The example apps' servers start sandbox sessions with POST /dev/sessions over this
+      # network. Caddy answers /dev/* with 404, so nobody on the internet can use them.
+      RELAY_DEV_SESSIONS: "1"
+      RELAY_EXAMPLE_MORTGAGE: "1"
+      RELAY_MORTGAGE_TOOLS_URL: http://mortgage-tools:8090
+      RELAY_CRM_TOOLS_URL: http://crm-tools:8091
+      RELAY_SHOP_TOOLS_URL: http://shop-tools:8092
+      RELAY_BUS_TOOLS_URL: http://bus-tools:8093
+      RELAY_STAYS_TOOLS_URL: http://stays-tools:8094
+      RELAY_AGENTS_DIR: /app/agents
+      RELAY_LOG_FORMAT: json
+    volumes:
+      - ../../agents:/app/agents:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mortgage-tools:
+        condition: service_healthy
+      crm-tools:
+        condition: service_healthy
+      shop-tools:
+        condition: service_healthy
+      bus-tools:
+        condition: service_healthy
+      stays-tools:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  # --- Website + sandbox example apps (each serves on :3000 inside the network) ---
+
+  website:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        APP: "@relay/website"
+        APP_DIR: apps/website
+        NEXT_PUBLIC_EXAMPLE_SALES_CRM_URL: https://crm.${DOMAIN}/dashboard
+        NEXT_PUBLIC_EXAMPLE_MORTGAGE_URL: https://mortgage.${DOMAIN}
+        NEXT_PUBLIC_EXAMPLE_STOREFRONT_URL: https://shop.${DOMAIN}
+        NEXT_PUBLIC_EXAMPLE_BUS_BOOKING_URL: https://bus.${DOMAIN}
+        NEXT_PUBLIC_EXAMPLE_STAYS_URL: https://stays.${DOMAIN}
+
+  crm-web:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        <<: *web-build-args
+        APP: "@relay/crm-frontend"
+        APP_DIR: examples/sales-crm/frontend
+    environment:
+      <<: *web-env
+      CRM_TOOLS_URL: http://crm-tools:8091
+    depends_on: [gateway]
+
+  mortgage-web:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        <<: *web-build-args
+        APP: "@relay/mortgage-frontend"
+        APP_DIR: examples/mortgage-servicing/frontend
+    environment:
+      <<: *web-env
+      MORTGAGE_TOOLS_URL: http://mortgage-tools:8090
+    depends_on: [gateway]
+
+  shop-web:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        <<: *web-build-args
+        APP: "@relay/storefront-frontend"
+        APP_DIR: examples/storefront/frontend
+    environment:
+      <<: *web-env
+      SHOP_API_URL: http://shop-tools:8092
+    depends_on: [gateway]
+
+  bus-web:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        <<: *web-build-args
+        APP: "@relay/bus-frontend"
+        APP_DIR: examples/bus-booking/frontend
+    environment:
+      <<: *web-env
+      BUS_API_URL: http://bus-tools:8093
+    depends_on: [gateway]
+
+  stays-web:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        <<: *web-build-args
+        APP: "@relay/stays-frontend"
+        APP_DIR: examples/stays/frontend
+    environment:
+      <<: *web-env
+      STAYS_API_URL: http://stays-tools:8094
+    depends_on: [gateway]
+
+volumes:
+  caddy-data:
+  caddy-config:
+  relay-pg-data:
+  crm-data:
+  shop-data:
+  bus-data:
+  stays-data:

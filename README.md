@@ -69,7 +69,7 @@ Mortgage end-to-end suites (needs the stack running): `PLAYWRIGHT_E2E=1 pnpm --f
 
 ## Environment
 
-Server variables go in `infra/docker/.env` (copy from [`.env.example`](./infra/docker/.env.example)); the full list with defaults is in the [operator guide](./docs/operating-the-gateway.md#configuration). The essentials:
+Server variables go in `infra/docker/.env` (copy from [`.env.example`](./infra/docker/.env.example)); the full list with defaults is in the [operator guide](./docs/operating-the-gateway.md#configuration). To run everything on a server over HTTPS, see [docs/deploying.md](./docs/deploying.md). The essentials:
 
 | Variable | Purpose |
 |----------|---------|

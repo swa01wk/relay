@@ -73,6 +73,9 @@ Iframes: over HTTPS the sandbox cookie is `SameSite=None; Secure; Partitioned`, 
 the website and the examples are on different sites. Over plain HTTP (localhost) it is `Lax`,
 which works because all localhost ports count as one site.
 
+On a server, [deploying.md](deploying.md) runs all of this behind Caddy: the example apps reach the
+gateway inside the Docker network and `/dev/*` is not exposed.
+
 ## Add an example
 
 1. Build the example as usual (`examples/<name>/frontend`, `tools`, an agent manifest).
@@ -83,12 +86,16 @@ which works because all localhost ports count as one site.
    `app/api/assistant/session/route.ts` + `app/api/sandbox/reset/route.ts` (copy the CRM ones), and
    when `NEXT_PUBLIC_RELAY_SANDBOX=1` connect with the server's `sessionId` + token and show Reset
    demo. A session your server started does not deliver `SESSION_READY` to the browser: do what
-   you did on it after `connect()` resolves. Add `transpilePackages` and the `frame-ancestors`
-   header to `next.config.ts`, and a `dev:sandbox` script.
+   you did on it after `connect()` resolves. Add `transpilePackages`, the `frame-ancestors`
+   header and the `output` switch (`RELAY_NEXT_STANDALONE`, used by the Docker image) to
+   `next.config.ts`, and a `dev:sandbox` script.
 4. Website: add an entry to `apps/website/lib/examples.ts` with its own
    `NEXT_PUBLIC_EXAMPLE_<NAME>_URL`. The gallery, sandbox page and home page pick it up.
 5. Add the tools service to `services/gateway/tests/test_example_sandboxes.py` (or its own test file,
    like `test_storefront_tools.py`).
+6. Server: add its tools service and a `<name>-web` service to `infra/docker/docker-compose.prod.yml`
+   (copy `stays-web`), a site to `infra/docker/Caddyfile`, a DNS record, and its
+   `NEXT_PUBLIC_EXAMPLE_<NAME>_URL` build arg on the `website` service ([deploying.md](deploying.md)).
 
 An app with per-user data (like the storefront) can skip the cookie-on-first-session step: set the
 cookie in `proxy.ts` (`newSandboxId` + `sandboxCookie` from `@relay/example-sandbox`) and use the

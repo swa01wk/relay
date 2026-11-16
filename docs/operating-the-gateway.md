@@ -2,7 +2,7 @@
 
 For whoever runs the gateway (not for app developers — their docs ship with the SDK in
 `packages/web-sdk/`). Covers configuration, operator endpoints, observability, gateway-wide
-agents and custom Python agents.
+agents and custom Python agents. To put the whole stack on a server, see [deploying.md](deploying.md).
 
 ## Operator endpoints
 

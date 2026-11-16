@@ -1,0 +1,23 @@
+# Build context for infra/docker/*: never send local installs, builds, data or secrets.
+.git
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+.pnpm-store
+**/.venv
+**/venv
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.db
+**/*.db-journal
+**/test-results
+**/playwright-report
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
