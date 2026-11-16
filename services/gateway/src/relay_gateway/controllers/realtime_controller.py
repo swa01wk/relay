@@ -33,6 +33,13 @@ class WebRtcPatchBody(BaseModel):
     candidates: list[IceCandidateBody] = Field(default_factory=list)
 
 
+@router.get("/sessions/{session_id}/webrtc/ice-servers")
+async def webrtc_ice_servers(session_id: str, request: Request) -> dict[str, Any]:
+    """STUN/TURN servers for the browser's peer connection (TURN credentials expire on their own)."""
+    session_service.require_token(session_id, session_token(request, None), detail=_TOKEN_ERROR)
+    return realtime_service.ice_servers(session_id)
+
+
 @router.post("/sessions/{session_id}/webrtc/offer")
 async def webrtc_offer(
     session_id: str,

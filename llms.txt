@@ -115,7 +115,7 @@ Key rules for code that integrates Relay:
 
 - [README.md](README.md): repository layout, Docker Compose quick start (gateway :8080, mortgage tools :8090, CRM tools :8091, store API :8092, bus booking API :8093, rentals API :8094, mortgage UI :3000, CRM UI :3002, website :3003, storefront :3004, bus booking :3005, rentals :3006), test commands
 - [packages/web-sdk/docs/03-reference.md](packages/web-sdk/docs/03-reference.md): customer-facing reference — endpoints an app uses, events, error codes, surface specs
-- [docs/deploying.md](docs/deploying.md): deploying everything on one server — `infra/docker/docker-compose.prod.yml` + Caddy (HTTPS, subdomains per app, `/dev/*` blocked publicly), `.env.prod`, `infra/docker/prod.sh`, `relay login --gateway`, backups, voice/TURN limits
+- [docs/deploying.md](docs/deploying.md): deploying everything on one server — `infra/docker/docker-compose.prod.yml` + Caddy (HTTPS, subdomains per app, `/dev/*` blocked publicly), `.env.prod`, `infra/docker/prod.sh`, `relay login --gateway`, backups, coturn TURN relay for voice (gateway hands out short-lived TURN credentials at `GET /sessions/{id}/webrtc/ice-servers`)
 - [docs/operating-the-gateway.md](docs/operating-the-gateway.md): operator guide — every **configuration variable** (with defaults), `/admin`, `/metrics`, observability, gateway-wide and custom Python agents
 - [agents/README.md](agents/README.md): agent manifest format
 - [packages/cli/README.md](packages/cli/README.md): every `relay` command

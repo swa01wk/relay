@@ -153,6 +153,7 @@ const session = createRelaySession({
   apiKey: process.env.NEXT_PUBLIC_RELAY_API_KEY!,   // publishable key (rpk_…); never a secret key
   agentId: process.env.NEXT_PUBLIC_AGENT_ID!,
   transport: "small-webrtc",            // "text-only" if the app never uses voice
+  // iceServers: leave unset: voice uses the STUN/TURN servers Relay provides for the session
 })
 
 // 1) Handlers BEFORE connect().

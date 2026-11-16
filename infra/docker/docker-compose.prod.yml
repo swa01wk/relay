@@ -4,8 +4,8 @@
 #   cp infra/docker/.env.prod.example infra/docker/.env.prod   # fill it in
 #   infra/docker/prod.sh up -d --build
 #
-# Only Caddy publishes ports (80, 443). Everything else is reachable inside this network only.
-# See docs/deploying.md.
+# Only Caddy (80, 443) and coturn (3478, voice relay) are reachable from outside. Everything else
+# is reachable inside this network only. See docs/deploying.md.
 
 x-restart: &restart
   restart: unless-stopped
@@ -45,6 +45,33 @@ services:
       - shop-web
       - bus-web
       - stays-web
+
+  # TURN relay for voice: browsers send audio here when they cannot reach the gateway directly
+  # (it is behind Docker's NAT). Host networking so it sees the server's public address. It may only
+  # relay to the gateway's fixed address on this network (no other peers, no TCP relays), and only
+  # with the short-lived credentials the gateway signs with RELAY_TURN_SECRET.
+  coturn:
+    <<: *restart
+    image: coturn/coturn:4.6.3
+    network_mode: host
+    command:
+      - --log-file=stdout
+      - --listening-port=3478
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=${RELAY_TURN_SECRET:?set RELAY_TURN_SECRET in .env.prod}
+      - --realm=turn.${DOMAIN}
+      - --min-port=49152
+      - --max-port=49252
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --no-tcp-relay
+      - --denied-peer-ip=0.0.0.0-255.255.255.255
+      - --denied-peer-ip=::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      - --allowed-peer-ip=172.31.240.10
+      - --user-quota=4
+      - --total-quota=200
 
   redis:
     <<: *restart
@@ -172,6 +199,13 @@ services:
       RELAY_STAYS_TOOLS_URL: http://stays-tools:8094
       RELAY_AGENTS_DIR: /app/agents
       RELAY_LOG_FORMAT: json
+      # Voice: browsers get TURN credentials for coturn above (see GET /sessions/{id}/webrtc/ice-servers).
+      RELAY_TURN_URLS: turn:turn.${DOMAIN}:3478?transport=udp,turn:turn.${DOMAIN}:3478?transport=tcp
+      RELAY_TURN_SECRET: ${RELAY_TURN_SECRET}
+    # Fixed address: coturn relays audio only to this one.
+    networks:
+      default:
+        ipv4_address: 172.31.240.10
     volumes:
       - ../../agents:/app/agents:ro
     depends_on:
@@ -281,6 +315,12 @@ services:
       <<: *web-env
       STAYS_API_URL: http://stays-tools:8094
     depends_on: [gateway]
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.240.0/24
 
 volumes:
   caddy-data:

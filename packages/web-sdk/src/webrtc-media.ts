@@ -36,11 +36,15 @@ const MIC_CONSTRAINTS: MediaTrackConstraints = {
   channelCount: 1,
 };
 
+/** Used when the gateway does not hand out ICE servers (older gateways) and the app sets none. */
+const FALLBACK_ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+
 export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): SmallWebRtcSession {
   const baseUrl = options.gatewayUrl.replace(/\/$/, "");
   // The session token goes in a header, never the URL (URLs end up in proxy logs and history).
   const offerUrl = `${baseUrl}/sessions/${encodeURIComponent(options.sessionId)}/webrtc/offer`;
   const jsonHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${options.devToken}` };
+  const iceServersUrl = `${baseUrl}/sessions/${encodeURIComponent(options.sessionId)}/webrtc/ice-servers`;
 
   let connectionState: VoiceConnectionState = "disconnected";
   let pc: RTCPeerConnection | null = null;
@@ -69,6 +73,21 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
   const onAudioLevel = (handler: (level: number) => void) => {
     levelHandlers.add(handler);
     return () => levelHandlers.delete(handler);
+  };
+
+  /**
+   * The gateway's STUN/TURN servers for this session. TURN relays audio when a direct path is
+   * blocked (strict firewalls, mobile networks); its credentials expire, so fetch them per connect.
+   */
+  const gatewayIceServers = async (): Promise<RTCIceServer[]> => {
+    try {
+      const resp = await fetch(iceServersUrl, { headers: { Authorization: `Bearer ${options.devToken}` } });
+      if (!resp.ok) return FALLBACK_ICE_SERVERS;
+      const body = (await resp.json()) as { ice_servers?: RTCIceServer[] };
+      return Array.isArray(body.ice_servers) && body.ice_servers.length > 0 ? body.ice_servers : FALLBACK_ICE_SERVERS;
+    } catch {
+      return FALLBACK_ICE_SERVERS;
+    }
   };
 
   const flushIce = async () => {
@@ -165,7 +184,7 @@ export function attachSmallWebRtcMedia(options: SmallWebRtcConnectOptions): Smal
       }
 
       pc = new RTCPeerConnection({
-        iceServers: options.iceServers ?? [{ urls: "stun:stun.l.google.com:19302" }],
+        iceServers: options.iceServers ?? (await gatewayIceServers()),
       });
       for (const track of localStream.getAudioTracks()) {
         pc.addTransceiver(track, { direction: "sendrecv", streams: [localStream] });

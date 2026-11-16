@@ -88,7 +88,7 @@ from relay_gateway.services.key_alert_service import KeyAlertService
 from relay_gateway.services.project_service import ProjectService
 from relay_gateway.services.rate_limit_service import RateLimitService
 from relay_gateway.services.secret_service import SecretService
-from relay_gateway.services.realtime_service import RealtimeService
+from relay_gateway.services.realtime_service import IceConfig, RealtimeService
 from relay_gateway.services.retention_service import RetentionService
 from relay_gateway.services.session_service import SessionService
 from relay_gateway.services.stream_service import StreamService
@@ -319,7 +319,7 @@ session_service = SessionService(
     key_alert_service,
 )
 stream_service = StreamService(session_manager, session_repository)
-realtime_service = RealtimeService(session_manager)
+realtime_service = RealtimeService(session_manager, IceConfig.from_env())
 admin_service = AdminService(session_repository, event_repository)
 project_activity_service = ProjectActivityService(session_repository, event_repository)
 metrics_service = MetricsService(metrics_bridge)

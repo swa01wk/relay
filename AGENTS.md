@@ -109,7 +109,7 @@ pnpm --filter @sumukhj1219-wkt-org/relay-cli test
 
 ## Known gaps (don't assume these exist)
 
-- The hosted service is not deployed: no public gateway URL (the CLI defaults to `http://localhost:8080`), no HTTPS/TURN setup, no billing, no two-factor login. Emails (confirmation, password reset) need `RELAY_SMTP_HOST` and `RELAY_PUBLIC_URL`; without SMTP they are printed to the gateway log.
+- The hosted service runs only as a single-server stack (`docs/deploying.md`: Caddy HTTPS, coturn TURN relay); the CLI still defaults to `http://localhost:8080` (pass `--gateway`). No TURN over TLS, no billing, no two-factor login. Emails (confirmation, password reset) need `RELAY_SMTP_HOST` and `RELAY_PUBLIC_URL`; without SMTP they are printed to the gateway log.
 - Speech is still gateway-wide: voice sessions of every project use the operator's Deepgram key (only the LLM key is per project). Developers see their project's sessions and usage (`relay logs`, `relay usage`, read from the event log), but there is no metering for billing; `/metrics` has no project label.
 - Only OpenAI keys can be stored. Restricting the gateway's outbound network is still recommended on top of per-call address pinning.
 - `agents/*.yaml` on the gateway and the mortgage default agent serve dev sessions only (`RELAY_DEV_SESSIONS=1`).
@@ -120,3 +120,4 @@ pnpm --filter @sumukhj1219-wkt-org/relay-cli test
 - CRM writes work (SQLite via `CRM_DB_PATH`, Docker volume `crm-data`; `down -v` resets to the seed). Approval auth is a proof-of-concept token (`RELAY_DEV_APPROVER_TOKEN`).
 - npm: the CLI is published as `@sumukhj1219-wkt-org/relay-cli`; the SDK is `@sumukhj1219-wkt-org/relay-web-sdk` (built to `dist/` by `prepare`; check `npm view` before assuming a version is live). Bump `version` before every publish. The gateway image is built locally, not published.
 - The voice reply path has not received the text-turn failure handling.
+- Voice ICE: browsers get STUN/TURN from `GET /sessions/{id}/webrtc/ice-servers` (`RealtimeService.ice_servers`, `IceConfig`: `RELAY_TURN_URLS` + `RELAY_TURN_SECRET`, TURN REST credentials) unless the app passes `iceServers`; SDK ≥ 0.2.4 asks for them, older SDKs use Google STUN only.

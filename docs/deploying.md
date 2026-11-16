@@ -21,10 +21,15 @@ Files: `infra/docker/docker-compose.prod.yml`, `infra/docker/Caddyfile`,
 - Ubuntu 24.04 (or any Linux with Docker Engine and the Compose plugin, 2.24 or newer).
 - 4 vCPUs and 8 GB RAM. The gateway runs the voice models (Silero, Smart Turn), and building
   six Next.js apps needs memory. 30 GB of disk.
-- Firewall / cloud security group: allow inbound TCP 22, 80 and 443, and UDP 443 (HTTP/3). Only
-  Caddy publishes ports; Docker-published ports skip `ufw`, so don't publish others.
+- Firewall / cloud security group: allow inbound TCP 22, 80 and 443, UDP 443 (HTTP/3), and TCP +
+  UDP 3478 (voice relay). Port 80 must be open for Let's Encrypt. Only Caddy publishes ports;
+  Docker-published ports skip `ufw`, so don't publish others.
+- On the server's own firewall (`ufw`), also allow the voice relay ports the gateway sends audio to:
+  `ufw allow 3478 && ufw allow 49152:49252/udp` (only the server's cloud firewall needs 3478 open
+  to the internet; 49152–49252 are used between coturn and the gateway on the same machine).
 - DNS: `A` (and `AAAA` if the server has IPv6) records for `<DOMAIN>`, `www`, `api`, `crm`,
-  `mortgage`, `shop`, `bus` and `stays` pointing at the server. Create them before the first start,
+  `mortgage`, `shop`, `bus`, `stays` and `turn` pointing at the server (a wildcard `*.<DOMAIN>`
+  record plus one for `<DOMAIN>` covers them). Create them before the first start,
   or Caddy cannot get certificates (it retries on its own).
 
 Install Docker: `curl -fsSL https://get.docker.com | sh`, then `sudo usermod -aG docker $USER`
@@ -43,7 +48,7 @@ Fill in `infra/docker/.env.prod`:
 | Variable | |
 |---|---|
 | `DOMAIN`, `ACME_EMAIL` | Your domain and the Let's Encrypt contact |
-| `POSTGRES_PASSWORD`, `RELAY_SECRETS_KEY`, `RELAY_MORTGAGE_COMMIT_TOKEN` | Random values: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. Keep `RELAY_SECRETS_KEY` forever (it decrypts stored model keys) |
+| `POSTGRES_PASSWORD`, `RELAY_SECRETS_KEY`, `RELAY_MORTGAGE_COMMIT_TOKEN`, `RELAY_TURN_SECRET` | Random values: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. Keep `RELAY_SECRETS_KEY` forever (it decrypts stored model keys) |
 | `OPENAI_API_KEY` | Used by the example agents for every Experience Center visitor: give it a monthly spending cap at OpenAI |
 | `DEEPGRAM_API_KEY` | Voice for every project (text works without it) |
 | `RELAY_SIGNUP` + `RELAY_SIGNUP_ALLOWLIST` | `allowlist` with your own email (and your team's `@domain`), or `closed` |
@@ -87,7 +92,8 @@ git pull
 infra/docker/prod.sh up -d --build
 ```
 
-Only images whose files changed are rebuilt. After changing `DOMAIN` rebuild everything (the web apps
+Only images whose files changed are rebuilt. When an update changes the stack's network (as the
+TURN relay did), run `infra/docker/prod.sh down` before `up -d --build`; data volumes are kept. After changing `DOMAIN` rebuild everything (the web apps
 compile their addresses in). After editing `agents/*.yaml` run `infra/docker/prod.sh restart gateway`.
 
 ## 6. Data and backups
@@ -120,15 +126,22 @@ gateway has no per-session time or turn cap yet. The OpenAI spending cap is the 
 
 ## Voice (WebRTC)
 
-The gateway sends audio over WebRTC (UDP) from inside Docker, using STUN to find its public address.
-This works for most visitors without opening extra ports. Visitors behind strict networks (some
-mobile carriers and company firewalls) need a TURN server, which this stack does not include yet.
-Text chat works for everyone. If voice fails for some visitors, check `infra/docker/prod.sh logs
-gateway` for ICE errors.
+The gateway runs inside Docker, behind NAT, so browsers usually cannot reach it directly over UDP.
+The stack includes a TURN relay (`coturn`, host networking, port 3478): before voice starts, the SDK
+asks the gateway for ICE servers (`GET /sessions/{id}/webrtc/ice-servers`) and gets STUN plus TURN
+credentials that expire after an hour, signed with `RELAY_TURN_SECRET`. coturn relays only to the
+gateway's fixed address (`172.31.240.10` on the stack's network), never to other hosts, and does not
+relay TCP.
+
+If voice fails with "ICE failed": check that TCP and UDP 3478 are open in the cloud firewall, that
+`ufw` allows `49152:49252/udp`, and `infra/docker/prod.sh logs coturn` (each attempt logs an
+allocation; `401` means the secret differs between coturn and the gateway, which both read
+`RELAY_TURN_SECRET`). Networks that block everything but HTTPS would need TURN over TLS on 443,
+which this stack does not include.
 
 ## What this stack does not cover yet
 
-- TURN for voice on strict networks (above).
+- TURN over TLS (port 443) for networks that allow only HTTPS.
 - Several gateways: one gateway process serves all sessions.
 - Monitoring: Prometheus and Grafana run only in the local observability stack
   (`docker-compose.observability.yml`); on this server, scrape `https://api.<DOMAIN>/metrics` with

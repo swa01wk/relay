@@ -75,6 +75,10 @@ export type RelaySessionOptions = {
   devToken?: string;
   /** Phase 2: attach SmallWebRTC after RP session is ready */
   transport?: RelayTransportMode;
+  /**
+   * STUN/TURN servers for voice. Leave unset to use the ones the gateway hands out for the session
+   * (including TURN, which relays audio through strict firewalls).
+   */
   iceServers?: RTCIceServer[];
 };
 

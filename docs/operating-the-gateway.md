@@ -90,7 +90,10 @@ Set in `infra/docker/.env` (or the gateway container's environment). The gateway
 | `RELAY_DEV_APPROVER_TOKEN` | `dev-approver` | Proof-of-concept approver credential checked on `approval.grant` (the SDK sends `dev-approver` by default) |
 | **Voice / WebRTC** | | |
 | `RELAY_DISABLE_WEBRTC` | — | `1` disables voice (text only) |
-| `RELAY_ICE_STUN_URL` | `stun:stun.l.google.com:19302` | STUN server (production behind strict firewalls also needs TURN) |
+| `RELAY_ICE_STUN_URL` | `stun:stun.l.google.com:19302` | STUN server(s), comma-separated; empty = none. Used by the gateway and handed to browsers |
+| `RELAY_TURN_URLS` | — | TURN server(s) for browsers, comma-separated (e.g. `turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp`). Needed when the gateway runs behind NAT (Docker, cloud firewalls): without it voice fails with "ICE failed" for many visitors |
+| `RELAY_TURN_SECRET` | — | coturn's `static-auth-secret`. The gateway gives each session's browser TURN credentials signed with it (`GET /sessions/{id}/webrtc/ice-servers`, TURN REST scheme: username `<expiry>:<session_id>`); the secret itself never leaves the gateway |
+| `RELAY_TURN_TTL_SECONDS` | `3600` | How long those TURN credentials work (minimum 60) |
 | `DEEPGRAM_STT_MODEL` | `nova-3-general` | Speech-to-text model. Use a nova-3 model: Flux models are not supported for recognition (logged and replaced by `nova-3-general`), and key terms need nova-3 |
 | `DEEPGRAM_STT_LANGUAGE` | `en` | Recognition language, e.g. `en-US`, `en-IN` (Indian English), `multi` (several languages in one sentence, e.g. Hindi + English) |
 | `DEEPGRAM_STT_KEYTERMS` | — | Comma-separated words every session should listen for, added after the session agent's own manifest `keyterms` (100 in total) |
