@@ -22,6 +22,11 @@ export type Example = {
   modes: ("voice" | "text")[]
 }
 
+/** Screenshot of the example's home page (public/examples/<slug>.webp, 1200×750). */
+export function screenshotOf(example: Example): string {
+  return `/examples/${example.slug}.webp`
+}
+
 export const examples: Example[] = [
   {
     slug: "storefront",

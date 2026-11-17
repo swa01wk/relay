@@ -90,7 +90,8 @@ gateway inside the Docker network and `/dev/*` is not exposed.
    header and the `output` switch (`RELAY_NEXT_STANDALONE`, used by the Docker image) to
    `next.config.ts`, and a `dev:sandbox` script.
 4. Website: add an entry to `apps/website/lib/examples.ts` with its own
-   `NEXT_PUBLIC_EXAMPLE_<NAME>_URL`. The gallery, sandbox page and home page pick it up.
+   `NEXT_PUBLIC_EXAMPLE_<NAME>_URL`, and a screenshot of its home page at
+   `apps/website/public/examples/<slug>.webp` (1200×750 WebP). The gallery, sandbox page and home page pick it up.
 5. Add the tools service to `services/gateway/tests/test_example_sandboxes.py` (or its own test file,
    like `test_storefront_tools.py`).
 6. Server: add its tools service and a `<name>-web` service to `infra/docker/docker-compose.prod.yml`

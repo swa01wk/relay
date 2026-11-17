@@ -16,6 +16,7 @@ import { CopyButton } from "@/components/copy-button"
 import { EventStream } from "@/components/event-stream"
 import { Footer } from "@/components/footer"
 import { Nav } from "@/components/nav"
+import { ExampleShot } from "@/components/example-shot"
 import { examples } from "@/lib/examples"
 
 const INSTALL = "npm install @sumukhj1219-wkt-org/relay-web-sdk"
@@ -53,7 +54,7 @@ function Hero() {
   return (
     <section className="relative overflow-hidden border-b border-line">
       <div className="grid-bg pointer-events-none absolute inset-0" aria-hidden="true" />
-      <div className="relative mx-auto grid max-w-6xl gap-12 px-4 pt-16 pb-20 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:pt-24 lg:pb-28">
+      <div className="relative mx-auto grid max-w-7xl gap-12 px-4 pt-16 pb-20 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:pt-24 lg:pb-28">
         <div>
           <p className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-raised px-3 py-1 font-mono text-xs text-muted">
             <span className="size-1.5 rounded-full bg-accent" /> Preview · voice + text
@@ -111,7 +112,7 @@ function WhyNow() {
   ]
   return (
     <section className="border-b border-line">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
         <SectionHeading eyebrow="Why now" title="Clicks are the bottleneck, not the answers." />
         <div className="mt-12 grid gap-px overflow-hidden rounded-xl border border-line bg-line md:grid-cols-3">
           {beats.map((b, i) => (
@@ -136,7 +137,7 @@ function HowItWorks() {
   ]
   return (
     <section id="how" className="scroll-mt-14 border-b border-line">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
         <SectionHeading eyebrow="How it works" title="Three parts. You keep two of them.">
           Your frontend and your tools service stay yours. Relay runs the realtime session in between and speaks a
           typed protocol to both.
@@ -224,7 +225,7 @@ function Capabilities() {
   ]
   return (
     <section className="border-b border-line">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
         <SectionHeading eyebrow="What Relay handles" title="The parts that take months, done once.">
           Turn-taking, interruptions, latency, approvals, tenancy. You write tools and register actions.
         </SectionHeading>
@@ -245,7 +246,7 @@ function Capabilities() {
 function UseCases() {
   return (
     <section className="border-b border-line">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <SectionHeading eyebrow="Experience Center" title="Don't take our word for it. Talk to one.">
             Real apps running on Relay. Each visitor gets a private copy of the data, so go ahead and change things.
@@ -259,18 +260,21 @@ function UseCases() {
             <Link
               key={e.slug}
               href={`/try/${e.slug}`}
-              className="group flex flex-col rounded-xl border border-line-strong bg-raised p-6 transition-colors hover:border-accent/50"
+              className="group flex flex-col overflow-hidden rounded-xl border border-line-strong bg-raised transition-colors hover:border-accent/50"
             >
-              <p className="font-mono text-xs text-faint">{e.industry}</p>
-              <h3 className="mt-2 text-lg font-medium">{e.name}</h3>
-              <p className="mt-1 text-sm text-muted">{e.tagline}</p>
-              <div className="mt-5 rounded-lg border border-line bg-sunken p-3 font-mono text-[12px]">
-                <span className="text-faint">try › </span>
-                <span>&ldquo;{e.prompts[0]}&rdquo;</span>
+              <ExampleShot example={e} />
+              <div className="flex flex-1 flex-col p-6">
+                <p className="font-mono text-xs text-faint">{e.industry}</p>
+                <h3 className="mt-2 text-lg font-medium">{e.name}</h3>
+                <p className="mt-1 text-sm text-muted">{e.tagline}</p>
+                <div className="mt-5 rounded-lg border border-line bg-sunken p-3 font-mono text-[12px]">
+                  <span className="text-faint">try › </span>
+                  <span>&ldquo;{e.prompts[0]}&rdquo;</span>
+                </div>
+                <span className="mt-auto inline-flex items-center gap-1.5 pt-5 text-sm text-accent">
+                  Open the sandbox <ArrowRightIcon className="size-4 transition-transform group-hover:translate-x-0.5" />
+                </span>
               </div>
-              <span className="mt-5 inline-flex items-center gap-1.5 text-sm text-accent">
-                Open the sandbox <ArrowRightIcon className="size-4 transition-transform group-hover:translate-x-0.5" />
-              </span>
             </Link>
           ))}
         </div>
@@ -296,7 +300,7 @@ await session.connect()`
 function Developers() {
   return (
     <section id="developers" className="scroll-mt-14 border-b border-line">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
         <SectionHeading eyebrow="Developers" title="From npm install to talking app in an afternoon.">
           A CLI for your project and keys, a YAML manifest for the agent, and a framework-agnostic SDK. Your coding
           agent can do most of it: <code className="font-mono text-fg">relay init</code> points it at the SDK&apos;s
@@ -347,7 +351,7 @@ function CodeCard({ step, title, lang, code, className = "" }: { step: string; t
 function Pricing() {
   return (
     <section id="pricing" className="scroll-mt-14 border-b border-line">
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
         <SectionHeading eyebrow="Pricing" title="Free while Relay is in preview.">
           You bring your own model key, so model usage is billed by your provider. Usage-based plans for production
           traffic will be announced before the preview ends.
@@ -380,7 +384,7 @@ function Pricing() {
 function ClosingCta() {
   return (
     <section>
-      <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-20 sm:px-6 md:flex-row md:items-center">
+      <div className="mx-auto flex max-w-7xl flex-col items-start gap-6 px-4 py-20 sm:px-6 md:flex-row md:items-center">
         <h2 className="max-w-xl text-3xl font-semibold tracking-tight text-balance">
           Hear it drive a real app before you write a line.
         </h2>
