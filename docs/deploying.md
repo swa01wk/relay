@@ -9,7 +9,7 @@ certificates it gets from Let's Encrypt.
 |---|---|---|
 | `https://<DOMAIN>` | `website` | Marketing site + Experience Center (`/try`); `www.` redirects here |
 | `https://api.<DOMAIN>` | `gateway` | API, `relay login`, session WebSocket, voice, `/admin`, `/metrics` |
-| `https://crm.<DOMAIN>`, `mortgage.`, `shop.`, `bus.`, `stays.` | `crm-web`, `mortgage-web`, `shop-web`, `bus-web`, `stays-web` | Example apps in sandbox mode, shown in the website's iframes |
+| `https://crm.<DOMAIN>`, `shop.`, `bus.`, `stays.`, `bank.` | `crm-web`, `shop-web`, `bus-web`, `stays-web`, `bank-web` | Example apps in sandbox mode, shown in the website's iframes |
 | — | `postgres`, `redis`, `*-tools` | Internal only, no ports on the server |
 
 Files: `infra/docker/docker-compose.prod.yml`, `infra/docker/Caddyfile`,
@@ -28,7 +28,7 @@ Files: `infra/docker/docker-compose.prod.yml`, `infra/docker/Caddyfile`,
   `ufw allow 3478 && ufw allow 49152:49252/udp` (only the server's cloud firewall needs 3478 open
   to the internet; 49152–49252 are used between coturn and the gateway on the same machine).
 - DNS: `A` (and `AAAA` if the server has IPv6) records for `<DOMAIN>`, `www`, `api`, `crm`,
-  `mortgage`, `shop`, `bus`, `stays` and `turn` pointing at the server (a wildcard `*.<DOMAIN>`
+  `shop`, `bus`, `stays`, `bank` and `turn` pointing at the server (a wildcard `*.<DOMAIN>`
   record plus one for `<DOMAIN>` covers them). Create them before the first start,
   or Caddy cannot get certificates (it retries on its own).
 
@@ -48,7 +48,7 @@ Fill in `infra/docker/.env.prod`:
 | Variable | |
 |---|---|
 | `DOMAIN`, `ACME_EMAIL` | Your domain and the Let's Encrypt contact |
-| `POSTGRES_PASSWORD`, `RELAY_SECRETS_KEY`, `RELAY_MORTGAGE_COMMIT_TOKEN`, `RELAY_TURN_SECRET` | Random values: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. Keep `RELAY_SECRETS_KEY` forever (it decrypts stored model keys) |
+| `POSTGRES_PASSWORD`, `RELAY_SECRETS_KEY`, `RELAY_TURN_SECRET` | Random values: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. Keep `RELAY_SECRETS_KEY` forever (it decrypts stored model keys) |
 | `OPENAI_API_KEY` | Used by the example agents for every Experience Center visitor: give it a monthly spending cap at OpenAI |
 | `DEEPGRAM_API_KEY` | Voice for every project (text works without it) |
 | `RELAY_SIGNUP` + `RELAY_SIGNUP_ALLOWLIST` | `allowlist` with your own email (and your team's `@domain`), or `closed` |
@@ -101,7 +101,7 @@ compile their addresses in). After editing `agents/*.yaml` run `infra/docker/pro
 | Volume | Holds |
 |---|---|
 | `relay-prod_relay-pg-data` | Accounts, projects, keys (hashed), encrypted model keys, event log |
-| `relay-prod_crm-data`, `_shop-data`, `_bus-data`, `_stays-data` | Example data and per-visitor sandboxes |
+| `relay-prod_crm-data`, `_shop-data`, `_bus-data`, `_stays-data`, `_bank-data` | Example data and per-visitor sandboxes |
 | `relay-prod_caddy-data` | Certificates |
 
 Back up Postgres daily, and keep `infra/docker/.env.prod` (with `RELAY_SECRETS_KEY`) somewhere safe.
@@ -116,8 +116,8 @@ infra/docker/prod.sh exec -T postgres pg_dump -U relay relay | gzip > relay-$(da
 ## How the Experience Center works here
 
 The example apps' servers start each visitor's session with `POST /dev/sessions` on
-`http://gateway:8080`, inside the Docker network, and run on the gateway's own agents (`agents/*.yaml`
-and the mortgage agent). Caddy answers `/dev/*` with `404` on the public address, so nobody on the
+`http://gateway:8080`, inside the Docker network, and run on the gateway's own agents (`agents/*.yaml`).
+Caddy answers `/dev/*` with `404` on the public address, so nobody on the
 internet can start a keyless session or read a session timeline. Browsers reach the gateway only
 through `api.<DOMAIN>` (WebSocket and voice, with the session's token).
 

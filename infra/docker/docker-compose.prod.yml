@@ -41,10 +41,10 @@ services:
       - gateway
       - website
       - crm-web
-      - mortgage-web
       - shop-web
       - bus-web
       - stays-web
+      - bank-web
 
   # TURN relay for voice: browsers send audio here when they cannot reach the gateway directly
   # (it is behind Docker's NAT). Host networking so it sees the server's public address. It may only
@@ -99,20 +99,6 @@ services:
 
   # --- Example tools services (per-visitor sandbox data on) ---
 
-  mortgage-tools:
-    <<: *restart
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile.mortgage-tools
-    environment:
-      MORTGAGE_SANDBOXES: "1"
-      MORTGAGE_COMMIT_TOKEN: ${RELAY_MORTGAGE_COMMIT_TOKEN:?set RELAY_MORTGAGE_COMMIT_TOKEN in .env.prod}
-    healthcheck: &tools-health
-      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   crm-tools:
     <<: *restart
     build:
@@ -123,9 +109,11 @@ services:
       CRM_SANDBOX_DIR: /data/sandboxes
     volumes:
       - crm-data:/data
-    healthcheck:
-      <<: *tools-health
+    healthcheck: &tools-health
       test: ["CMD", "curl", "-f", "http://localhost:8091/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   shop-tools:
     <<: *restart
@@ -169,6 +157,20 @@ services:
       <<: *tools-health
       test: ["CMD", "curl", "-f", "http://localhost:8094/health"]
 
+  bank-tools:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.bank-tools
+    environment:
+      BANK_DB_PATH: /data/bank.db
+      BANK_SANDBOX_DIR: /data/sandboxes
+    volumes:
+      - bank-data:/data
+    healthcheck:
+      <<: *tools-health
+      test: ["CMD", "curl", "-f", "http://localhost:8095/health"]
+
   # --- Gateway ---
 
   gateway:
@@ -191,12 +193,11 @@ services:
       # The example apps' servers start sandbox sessions with POST /dev/sessions over this
       # network. Caddy answers /dev/* with 404, so nobody on the internet can use them.
       RELAY_DEV_SESSIONS: "1"
-      RELAY_EXAMPLE_MORTGAGE: "1"
-      RELAY_MORTGAGE_TOOLS_URL: http://mortgage-tools:8090
       RELAY_CRM_TOOLS_URL: http://crm-tools:8091
       RELAY_SHOP_TOOLS_URL: http://shop-tools:8092
       RELAY_BUS_TOOLS_URL: http://bus-tools:8093
       RELAY_STAYS_TOOLS_URL: http://stays-tools:8094
+      RELAY_BANK_TOOLS_URL: http://bank-tools:8095
       RELAY_AGENTS_DIR: /app/agents
       RELAY_LOG_FORMAT: json
       # Voice: browsers get TURN credentials for coturn above (see GET /sessions/{id}/webrtc/ice-servers).
@@ -213,8 +214,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      mortgage-tools:
-        condition: service_healthy
       crm-tools:
         condition: service_healthy
       shop-tools:
@@ -222,6 +221,8 @@ services:
       bus-tools:
         condition: service_healthy
       stays-tools:
+        condition: service_healthy
+      bank-tools:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -241,10 +242,10 @@ services:
         APP: "@relay/website"
         APP_DIR: apps/website
         NEXT_PUBLIC_EXAMPLE_SALES_CRM_URL: https://crm.${DOMAIN}/dashboard
-        NEXT_PUBLIC_EXAMPLE_MORTGAGE_URL: https://mortgage.${DOMAIN}
         NEXT_PUBLIC_EXAMPLE_STOREFRONT_URL: https://shop.${DOMAIN}
         NEXT_PUBLIC_EXAMPLE_BUS_BOOKING_URL: https://bus.${DOMAIN}
         NEXT_PUBLIC_EXAMPLE_STAYS_URL: https://stays.${DOMAIN}
+        NEXT_PUBLIC_EXAMPLE_BANKING_URL: https://bank.${DOMAIN}
 
   crm-web:
     <<: *restart
@@ -258,20 +259,6 @@ services:
     environment:
       <<: *web-env
       CRM_TOOLS_URL: http://crm-tools:8091
-    depends_on: [gateway]
-
-  mortgage-web:
-    <<: *restart
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile.web
-      args:
-        <<: *web-build-args
-        APP: "@relay/mortgage-frontend"
-        APP_DIR: examples/mortgage-servicing/frontend
-    environment:
-      <<: *web-env
-      MORTGAGE_TOOLS_URL: http://mortgage-tools:8090
     depends_on: [gateway]
 
   shop-web:
@@ -316,6 +303,20 @@ services:
       STAYS_API_URL: http://stays-tools:8094
     depends_on: [gateway]
 
+  bank-web:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        <<: *web-build-args
+        APP: "@relay/banking-frontend"
+        APP_DIR: examples/banking/frontend
+    environment:
+      <<: *web-env
+      BANK_API_URL: http://bank-tools:8095
+    depends_on: [gateway]
+
 networks:
   default:
     ipam:
@@ -330,3 +331,4 @@ volumes:
   shop-data:
   bus-data:
   stays-data:
+  bank-data:

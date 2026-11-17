@@ -6,5 +6,6 @@ packages:
   - "examples/storefront/frontend"
   - "examples/bus-booking/frontend"
   - "examples/stays/frontend"
+  - "examples/banking/frontend"
   - "examples/shared/*"
   - "apps/*"

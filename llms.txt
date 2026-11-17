@@ -106,6 +106,14 @@ Key rules for code that integrates Relay:
 - [examples/stays/frontend](examples/stays/frontend): Next.js 16 on :3006 — the booking panel's `SET_STAY` action ([components/stays/booking-panel.tsx](examples/stays/frontend/components/stays/booking-panel.tsx)), `SEARCH_STAYS` / `OPEN_LISTING` / `OPEN_TRIP` / `FILTER_TRIPS` / `OPEN_WISHLIST` ([components/stays/stays-actions.tsx](examples/stays/frontend/components/stays/stays-actions.tsx)), a Confirm and pay page form named like `reserve_stay`
 - [agents/stays.yaml](agents/stays.yaml): manifest, prompt and voice keyterms (destinations, areas, property types, hosts)
 
+## Example: Kestrel Bank net banking (banking, per-user data, transfers and cards)
+
+- [examples/banking/README.md](examples/banking/README.md): accounts, a filterable statement, transfers (UPI / IMPS / NEFT, limits, new-payee cap, standing instructions), bills and autopay, debit and credit cards (lock, controls, replacement, statement, payment), fixed deposits, disputes, insights; how the parts fit
+- [examples/banking/relay-tools.md](examples/banking/relay-tools.md): the inventory → 39 tools (26 read, 13 side-effecting), 6 screen actions, coverage table and 26 test questions
+- [examples/banking/tools/src/bank_api/logic.py](examples/banking/tools/src/bank_api/logic.py): every banking rule once, used by both the bank API (`/api/…`, `X-Bank-User`) and the Relay tools (`X-Relay-User`)
+- [examples/banking/frontend](examples/banking/frontend): Next.js 16 on :3007 — `FILTER_TRANSACTIONS` / `OPEN_ACCOUNT` / `OPEN_TRANSACTION` / `OPEN_CARD` / `START_TRANSFER` / `SHOW_INSIGHTS` ([components/bank/bank-actions.tsx](examples/banking/frontend/components/bank/bank-actions.tsx)), a Send money page form named like `transfer_money` with a live limit check ([components/bank/transfer-form.tsx](examples/banking/frontend/components/bank/transfer-form.tsx))
+- [agents/banking.yaml](agents/banking.yaml): manifest, prompt and voice keyterms (products, payment modes, billers, payees, merchants)
+
 ## Website and Experience Center
 
 - [apps/website](apps/website): marketing site + Experience Center (`/try`, Next.js 16, :3003); the example gallery comes only from [lib/examples.ts](apps/website/lib/examples.ts)

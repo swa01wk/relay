@@ -1,0 +1,81 @@
+# Kestrel Bank assistant — a declarative Relay agent (no Python).
+# Loaded by the gateway at startup from $RELAY_AGENTS_DIR. The net banking site connects with agentId "banking".
+agent_id: banking
+
+# Tools service: GET /tools (discovery) and POST /tools/{name}. Env vars expand: ${VAR:-default}.
+tools_url: ${RELAY_BANK_TOOLS_URL:-http://localhost:8095}
+
+system_prompt_file: banking.prompt.md
+
+instructions: >
+  Good fits: transactions for a merchant, category or period → the site's own statement page (FILTER_TRANSACTIONS)
+  rather than a drawn list; spending by category or merchant → bar chart from aggregate_transactions; income vs.
+  spending by month → bar or line chart from get_cash_flow; balances → kv; a transfer → the site's Transfer page
+  filled in (START_TRANSFER) or a form bound to transfer_money; one transaction, card or deposit → its own page
+  (OPEN_TRANSACTION, OPEN_CARD, OPEN_ACCOUNT); FD options → table from get_fd_quote for a few tenures. Prefer the
+  site's own screens (FILTER_TRANSACTIONS, OPEN_ACCOUNT, OPEN_TRANSACTION, OPEN_CARD, START_TRANSFER, SHOW_INSIGHTS,
+  navigation) over duplicates.
+
+tool_timeout_seconds: 30
+
+# Words speech recognition should listen for (max 100, 50 chars each).
+keyterms:
+  - Kestrel
+  - Premier Savings
+  - Joint Savings
+  - Horizon
+  - RuPay
+  - Visa
+  - UPI
+  - UPI ID
+  - IMPS
+  - NEFT
+  - IFSC
+  - payee
+  - standing instruction
+  - autopay
+  - fixed deposit
+  - FD
+  - cumulative
+  - quarterly payout
+  - minimum due
+  - statement
+  - dispute
+  - chargeback
+  - contactless
+  - international
+  - MSEDCL
+  - Airtel
+  - ACT Fibernet
+  - Maharashtra Natural Gas
+  - LIC
+  - Rohan Desai
+  - Meera
+  - Aai
+  - Sunita Mehta
+  - Rakesh Kulkarni
+  - Vidya Valley School
+  - Sakharam
+  - Swiggy
+  - Zomato
+  - Zepto
+  - BigBasket
+  - D-Mart
+  - Myntra
+  - Croma
+  - Decathlon
+  - IndiGo
+  - MakeMyTrip
+  - Rapido
+  - Uber
+  - Ola
+  - Cult.fit
+  - Netflix
+  - Spotify
+  - BookMyShow
+  - PVR INOX
+  - Apollo Pharmacy
+  - Parag Parikh
+  - SIP
+  - Baner
+  - Pune
