@@ -19,6 +19,8 @@ os.environ["CRM_DB_PATH"] = os.path.join(tempfile.mkdtemp(prefix="relay-crm-test
 os.environ["SHOP_DB_PATH"] = os.path.join(tempfile.mkdtemp(prefix="relay-shop-test-"), "shop.db")
 os.environ["BUS_DB_PATH"] = os.path.join(tempfile.mkdtemp(prefix="relay-bus-test-"), "bus.db")
 os.environ["STAYS_DB_PATH"] = os.path.join(tempfile.mkdtemp(prefix="relay-stays-test-"), "stays.db")
+os.environ["BANK_DB_PATH"] = os.path.join(tempfile.mkdtemp(prefix="relay-bank-test-"), "bank.db")
+os.environ["VNB_DB_PATH"] = os.path.join(tempfile.mkdtemp(prefix="relay-vnb-test-"), "vnb.db")
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402

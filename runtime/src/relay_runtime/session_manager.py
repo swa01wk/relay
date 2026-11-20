@@ -72,6 +72,7 @@ class _CommandType(StrEnum):
     VOICE_CANCEL_AGENT = "VOICE_CANCEL_AGENT"
     VOICE_TRY_COMMIT = "VOICE_TRY_COMMIT"
     VOICE_STT_FINAL_ENDPOINT = "VOICE_STT_FINAL_ENDPOINT"
+    VOICE_PENDING_COMMIT = "VOICE_PENDING_COMMIT"
     SHUTDOWN = "SHUTDOWN"
 
 
@@ -147,6 +148,15 @@ class SessionRecord:
     voice_turn_cancel: TurnCancellation | None = None
     voice_response_task: asyncio.Task[None] | None = None
     voice_transcript_buffer: str = ""
+    # Latest interim text the recognizer has not finalized yet.
+    voice_interim_text: str = ""
+    # When to stop waiting for that final and use the interim text instead.
+    voice_final_wait_deadline: float | None = None
+    # Words recognized while the agent was still working on the previous turn; they become
+    # the next turn when that one completes (instead of being dropped).
+    voice_pending_text: str = ""
+    # Text of the last committed voice turn, to recognise a late final of the same words.
+    voice_last_committed_text: str = ""
     utterance_commit_task: asyncio.Task[None] | None = None
     stt_final_endpoint_task: asyncio.Task[None] | None = None
     active_response_id: str | None = None
@@ -192,20 +202,21 @@ class SessionManager:
 
     @staticmethod
     def _stt_final_endpoint_ms() -> float:
-        """Debounce after STT ``TRANSCRIPT_FINAL`` before synthetic VAD endpoint."""
-        return float(os.environ.get("RELAY_STT_FINAL_ENDPOINT_MS", "500"))
+        """Fallback for a turn detector that never reports the end of speech.
+
+        Must outlast the turn detector's own wait: a recognizer final only marks a pause.
+        """
+        return float(os.environ.get("RELAY_STT_FINAL_ENDPOINT_MS", "3000"))
+
+    @staticmethod
+    def _stt_final_wait_ms() -> float:
+        """How long a finished utterance waits for the final of words still being recognized."""
+        return float(os.environ.get("RELAY_STT_FINAL_WAIT_MS", "1200"))
 
     @staticmethod
     def _merge_voice_transcript(previous: str, incoming: str) -> str:
-        incoming = incoming.strip()
-        if not incoming:
-            return previous.strip()
-        if not previous.strip():
-            return incoming
-        prev = previous.strip()
-        if incoming.startswith(prev) or prev in incoming:
-            return incoming if len(incoming) >= len(prev) else prev
-        return f"{prev} {incoming}".strip()
+        """Recognizer finals are consecutive stretches of speech, so they are only appended."""
+        return f"{previous.strip()} {incoming.strip()}".strip()
 
     def _runtime_for(self, session: SessionRecord) -> AgentRuntime:
         if self.runtime_resolver is not None:
@@ -332,6 +343,7 @@ class SessionManager:
                     await self._process_user_text(session, payload.text)
                     if not payload.done.done():
                         payload.done.set_result(None)
+                    self._request_pending_voice_commit(session)
                 elif cmd_type == _CommandType.CLIENT_STATE_SNAPSHOT:
                     assert isinstance(payload, _ClientStateSnapshot)
                     async with session.context_lock:
@@ -386,6 +398,11 @@ class SessionManager:
                 elif cmd_type == _CommandType.VOICE_STT_FINAL_ENDPOINT:
                     assert isinstance(payload, _VoiceSignal)
                     await self._apply_stt_final_endpoint(session)
+                    if not payload.done.done():
+                        payload.done.set_result(None)
+                elif cmd_type == _CommandType.VOICE_PENDING_COMMIT:
+                    assert isinstance(payload, _VoiceSignal)
+                    await self._commit_pending_voice_text(session)
                     if not payload.done.done():
                         payload.done.set_result(None)
             except asyncio.CancelledError:
@@ -1110,6 +1127,7 @@ class SessionManager:
         session.voice_capture_open = True
         session.voice_cancelled = False
         session.voice_transcript_buffer = ""
+        session.voice_interim_text = ""
         self._cancel_utterance_commit_timer(session)
 
     async def _process_voice_speech_started(self, session: SessionRecord) -> None:
@@ -1119,7 +1137,22 @@ class SessionManager:
         if session.turn_manager.phase == TurnPhase.USER_SPEAKING:
             self._cancel_stt_final_endpoint_timer(session)
             return
+        if session.turn_manager.phase == TurnPhase.ENDPOINTING:
+            # The user carried on before the commit: same utterance, keep what was heard.
+            self._cancel_utterance_commit_timer(session)
+            self._cancel_stt_final_endpoint_timer(session)
+            session.turn_manager.on_user_speech_resumed()
+            await self._publish(
+                session,
+                RelayEvent(
+                    type=EventType.USER_SPEECH_STARTED,
+                    metadata=self._base_metadata(session, source="turn_detector"),
+                    payload=minimal_payload_for(EventType.USER_SPEECH_STARTED),
+                ),
+            )
+            return
         session.voice_transcript_buffer = ""
+        session.voice_interim_text = ""
         self._cancel_utterance_commit_timer(session)
         self._cancel_stt_final_endpoint_timer(session)
         try:
@@ -1150,6 +1183,14 @@ class SessionManager:
             return
         session.endpointing_started_at = time.perf_counter()
         session.user_stopped_speaking_at = time.perf_counter()
+        session.voice_final_wait_deadline = time.perf_counter() + self._stt_final_wait_ms() / 1000.0
+        if not session.voice_transcript_buffer.strip() and not session.voice_interim_text:
+            # Kept as a log line (no text): tells "the recognizer heard nothing" apart from
+            # "words were heard but lost" when someone reports that speech was missed.
+            logger.info(
+                "voice speech ended with no words recognized yet session_id=%s",
+                session.session_id,
+            )
         await self._publish(
             session,
             RelayEvent(
@@ -1204,6 +1245,9 @@ class SessionManager:
         if delay_ms <= 0:
             await self._maybe_commit_voice_utterance(session)
             return
+        self._schedule_voice_commit(session, delay_ms)
+
+    def _schedule_voice_commit(self, session: SessionRecord, delay_ms: float) -> None:
         self._cancel_utterance_commit_timer(session)
 
         async def _fire() -> None:
@@ -1223,13 +1267,61 @@ class SessionManager:
         if session.turn_manager.phase != TurnPhase.ENDPOINTING:
             return
         text = session.voice_transcript_buffer.strip()
+        if session.voice_interim_text:
+            deadline = session.voice_final_wait_deadline or 0.0
+            remaining_ms = (deadline - time.perf_counter()) * 1000.0
+            if remaining_ms > 0:
+                # The last words are still being recognized; their final re-arms the commit.
+                self._schedule_voice_commit(session, remaining_ms)
+                return
+            text = self._merge_voice_transcript(text, session.voice_interim_text)
         if not text:
             return
         session.voice_transcript_buffer = ""
+        session.voice_interim_text = ""
+        session.voice_last_committed_text = text
         await self._start_voice_turn(session, user_text=text)
+
+    @staticmethod
+    def _normalized_words(text: str) -> str:
+        return " ".join("".join(ch for ch in text.lower() if ch.isalnum() or ch.isspace()).split())
+
+    def _is_late_final_of_committed_turn(self, session: SessionRecord, text: str) -> bool:
+        """A final for words the turn was already started with (from their interim text)."""
+        words = self._normalized_words(text)
+        committed = self._normalized_words(session.voice_last_committed_text)
+        return bool(words) and bool(committed) and committed.endswith(words)
+
+    def _request_pending_voice_commit(self, session: SessionRecord) -> None:
+        if session.ended or not session.voice_pending_text.strip():
+            return
+        done = asyncio.get_running_loop().create_future()
+        session.queue.put_nowait((_CommandType.VOICE_PENDING_COMMIT, _VoiceSignal(done=done)))
+
+    async def _commit_pending_voice_text(self, session: SessionRecord) -> None:
+        """Start the turn for words spoken while the previous turn was being answered."""
+        text = session.voice_pending_text.strip()
+        if not text or session.ended:
+            return
+        phase = session.turn_manager.phase
+        if phase in (TurnPhase.USER_SPEAKING, TurnPhase.ENDPOINTING):
+            # The user is speaking again: those words lead into the current utterance.
+            session.voice_pending_text = ""
+            session.voice_transcript_buffer = self._merge_voice_transcript(
+                text, session.voice_transcript_buffer
+            )
+            return
+        if phase != TurnPhase.IDLE:
+            return  # Still busy (e.g. agent speaking); retried when that turn completes.
+        session.voice_pending_text = ""
+        session.voice_transcript_buffer = text
+        session.voice_interim_text = ""
+        await self._ensure_voice_endpointing(session)
+        await self._maybe_commit_voice_utterance(session)
 
     async def _process_voice_transcript_delta(self, session: SessionRecord, text: str) -> None:
         self._cancel_stt_final_endpoint_timer(session)
+        session.voice_interim_text = text.strip()
         await self._publish(
             session,
             RelayEvent(
@@ -1264,6 +1356,7 @@ class SessionManager:
             await self._process_voice_speech_ended(session)
 
     async def _process_voice_transcript_final(self, session: SessionRecord, text: str) -> None:
+        session.voice_interim_text = ""
         if not text.strip():
             try:
                 session.turn_manager.cancel_utterance()
@@ -1290,12 +1383,21 @@ class SessionManager:
             )
             return
 
+        phase = session.turn_manager.phase
+        if phase == TurnPhase.PROCESSING:
+            if self._is_late_final_of_committed_turn(session, text):
+                return
+            # The agent is still working on the previous turn: keep the words for the next one.
+            session.voice_pending_text = self._merge_voice_transcript(
+                session.voice_pending_text, text
+            )
+            return
+
         session.voice_transcript_buffer = self._merge_voice_transcript(
             session.voice_transcript_buffer,
             text,
         )
 
-        phase = session.turn_manager.phase
         if phase == TurnPhase.USER_SPEAKING:
             await self._arm_stt_final_endpoint(session)
             return
@@ -1405,6 +1507,7 @@ class SessionManager:
                 session.voice_capture_open = False
                 session.voice_cancelled = False
                 session.user_stopped_speaking_at = None
+                self._request_pending_voice_commit(session)
 
         session.voice_response_task = asyncio.create_task(_run())
 

@@ -45,6 +45,12 @@ class TurnManager:
             raise TurnTransitionError(f"cannot start speech in phase {self._phase}")
         self._phase = TurnPhase.USER_SPEAKING
 
+    def on_user_speech_resumed(self) -> None:
+        """User spoke again before the utterance was committed — it continues."""
+        if self._phase != TurnPhase.ENDPOINTING:
+            raise TurnTransitionError(f"cannot resume speech in phase {self._phase}")
+        self._phase = TurnPhase.USER_SPEAKING
+
     def on_user_speech_ended(self) -> None:
         if self._phase != TurnPhase.USER_SPEAKING:
             raise TurnTransitionError(f"cannot end speech in phase {self._phase}")

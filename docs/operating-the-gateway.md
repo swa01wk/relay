@@ -94,14 +94,24 @@ Set in `infra/docker/.env` (or the gateway container's environment). The gateway
 | `RELAY_TURN_URLS` | — | TURN server(s) for browsers, comma-separated (e.g. `turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp`). Needed when the gateway runs behind NAT (Docker, cloud firewalls): without it voice fails with "ICE failed" for many visitors |
 | `RELAY_TURN_SECRET` | — | coturn's `static-auth-secret`. The gateway gives each session's browser TURN credentials signed with it (`GET /sessions/{id}/webrtc/ice-servers`, TURN REST scheme: username `<expiry>:<session_id>`); the secret itself never leaves the gateway |
 | `RELAY_TURN_TTL_SECONDS` | `3600` | How long those TURN credentials work (minimum 60) |
+| `RELAY_STT_PROVIDER` | `deepgram` | Speech-to-text provider for voice sessions: `deepgram`, `cartesia` or `assemblyai`. Needs that provider's key (`DEEPGRAM_API_KEY` / `CARTESIA_API_KEY` / `ASSEMBLYAI_API_KEY`); without it voice runs with no recognition (logged). Text-to-speech stays on Deepgram |
+| `CARTESIA_API_KEY` | — | Cartesia key, used when `RELAY_STT_PROVIDER=cartesia` |
+| `CARTESIA_STT_MODEL` | `ink-whisper` | Cartesia recognition model. Key terms (manifest `keyterms`, `CARTESIA_STT_KEYTERMS`, else `DEEPGRAM_STT_KEYTERMS`) are sent only to `ink-2*` / `ink-preview*` models |
+| `CARTESIA_STT_LANGUAGE` | base of `DEEPGRAM_STT_LANGUAGE`, else `en` | ISO 639-1 code, e.g. `en`, `hi` (`en-IN` becomes `en`) |
+| `ASSEMBLYAI_API_KEY` | — | AssemblyAI key, used when `RELAY_STT_PROVIDER=assemblyai` |
+| `ASSEMBLYAI_STT_MODEL` | `universal-3-6-pro` | AssemblyAI streaming model, e.g. `assemblyai-stt-3-7-realtime`, `universal-streaming-english`, `universal-streaming-multilingual`. Key terms (manifest `keyterms`, `ASSEMBLYAI_STT_KEYTERMS`, else `DEEPGRAM_STT_KEYTERMS`) are sent as `keyterms_prompt`. Relay's turn detection decides when the user is done |
+| `ASSEMBLYAI_STT_LANGUAGE` | base of `DEEPGRAM_STT_LANGUAGE`, else `en` | e.g. `en`, `hi` |
 | `DEEPGRAM_STT_MODEL` | `nova-3-general` | Speech-to-text model. Use a nova-3 model: Flux models are not supported for recognition (logged and replaced by `nova-3-general`), and key terms need nova-3 |
 | `DEEPGRAM_STT_LANGUAGE` | `en` | Recognition language, e.g. `en-US`, `en-IN` (Indian English), `multi` (several languages in one sentence, e.g. Hindi + English) |
 | `DEEPGRAM_STT_KEYTERMS` | — | Comma-separated words every session should listen for, added after the session agent's own manifest `keyterms` (100 in total) |
 | `DEEPGRAM_TTS_MODEL` / `DEEPGRAM_TTS_ENCODING` / `DEEPGRAM_TTS_SAMPLE_RATE` | `flux-haley-en` / `linear16` / `24000` | Text-to-speech voice and audio format |
 | `RELAY_TURN_DETECTOR` | `hybrid` | `hybrid` (Silero start + Smart Turn stop) or `silero` |
 | `RELAY_VAD_MIN_VOLUME` | `0.35` | Voice activity threshold (raise if speaker echo triggers interruptions) |
-| `RELAY_ENDPOINTING_SILENCE_MS`, `RELAY_DEEPGRAM_ENDPOINTING_MS`, `RELAY_STT_FINAL_ENDPOINT_MS`, `RELAY_UTTERANCE_COMMIT_DELAY_MS` | `400`, `500`, `500`, `350` | End-of-utterance timing |
-| `RELAY_SMART_TURN_STOP_SECS`, `RELAY_SMART_TURN_PRE_SPEECH_MS`, `RELAY_SMART_TURN_MAX_DURATION_SECS`, `RELAY_USER_TURN_STOP_TIMEOUT_SECS` | `2.0`, `500`, `8`, `8` | Smart Turn tuning |
+| `RELAY_ENDPOINTING_SILENCE_MS`, `RELAY_DEEPGRAM_ENDPOINTING_MS`, `RELAY_UTTERANCE_COMMIT_DELAY_MS` | `400`, `500`, `350` | End-of-utterance timing |
+| `RELAY_STT_FINAL_ENDPOINT_MS` | `3000` | Ends the utterance this long after a recognizer final if the turn detector never reports the end of speech. Keep it above the Smart Turn wait, or sentences are cut at pauses |
+| `RELAY_STT_FINAL_WAIT_MS` | `1200` | How long a finished utterance waits for the final of words still being recognized before using their interim text |
+| `RELAY_SMART_TURN_STOP_SECS`, `RELAY_SMART_TURN_PRE_SPEECH_MS`, `RELAY_SMART_TURN_MAX_DURATION_SECS`, `RELAY_USER_TURN_STOP_TIMEOUT_SECS` | `2.0`, `500`, `8`, `3` | Smart Turn tuning. The last one ends a user turn this long after the last speech or words when nothing else did (e.g. a cough the recognizer returned no words for); keep it above `RELAY_SMART_TURN_STOP_SECS` |
+| `RELAY_VOICE_AUDIO_DUMP_DIR` | — | Debugging only: writes the exact microphone audio sent to speech recognition to `<dir>/<session_id>-<n>.wav` inside the gateway. Every call also logs `voice audio ingress … gaps=… max_gap_ms=…` (lost or late audio). Don't set it where callers' audio must not be stored |
 | `RELAY_PIPELINE_IDLE_TIMEOUT_SECS` | — | Stop an idle voice pipeline after N seconds |
 | **Testing only** | | |
 | `RELAY_INJECT_MODEL_TIMEOUT`, `RELAY_INJECT_STT_TIMEOUT`, `RELAY_INJECT_TTS_FAILURE`, `RELAY_INJECT_TRANSPORT_DISCONNECT`, `RELAY_INJECT_TOOL_TIMEOUT_SEC` | — | Fault injection for hardening tests; never set in production |
