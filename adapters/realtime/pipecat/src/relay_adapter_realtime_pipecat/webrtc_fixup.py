@@ -52,9 +52,15 @@ async def _relay_small_webrtc_connect(self: SmallWebRTCClient) -> None:
 
 
 async def _relay_idle_watcher(self: SmallWebRTCTrack) -> None:
-    """Keep mic ingress open; Pipecat disables the audio receiver after 2s idle."""
+    """Keep mic ingress open; Pipecat disables the audio receiver after 2s idle.
+
+    Stops once the track has ended: the audio receiver is never disabled here, so without
+    that check the watcher outlived every closed call, discarding frames every 2 s forever.
+    """
     while self._receiver._enabled:
         await asyncio.sleep(self._idle_timeout)
+        if _track_ended(self):
+            return
         idle_duration = time.time() - self._last_recv_time
         if idle_duration >= self._idle_timeout:
             await self.discard_old_frames()
@@ -71,6 +77,14 @@ async def _relay_idle_watcher(self: SmallWebRTCTrack) -> None:
                     idle_duration,
                 )
                 self._receiver._enabled = False
+
+
+def _track_ended(track: SmallWebRTCTrack) -> bool:
+    remote = getattr(track, "_track", None)
+    if getattr(remote, "readyState", "live") != "live":
+        return True
+    transport = getattr(getattr(track, "_receiver", None), "transport", None)
+    return getattr(transport, "state", None) == "closed"
 
 
 def apply_small_webrtc_audio_fixup() -> None:

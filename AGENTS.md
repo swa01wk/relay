@@ -103,6 +103,7 @@ pnpm --filter @sumukhj1219-wkt-org/relay-cli test
 ## Pitfalls already hit here
 
 - The WebSocket read loop (`controllers/stream_controller.py` → `StreamService.handle_frame`) must never await work queued on the session actor — spawn a task (otherwise acks and human edits stall behind a running turn).
+- Voice pipeline hooks (`VoicePipelineHooks`) wait for the session actor; the pipeline calls them through `non_blocking_hooks` (`voice_pipeline.py`), which runs them in order without blocking frames. Awaiting them inline stalled audio to speech recognition whenever the actor was busy, and words were lost. Words recognized while a turn is PROCESSING are kept (`voice_pending_text`) and become the next turn.
 - `session.context_lock` is an `asyncio.Lock` (not re-entrant). Approval grant/reject run while holding it; code called from there must not acquire it again.
 - A failed model/tool call must still complete the turn (`SESSION_ERROR` `turn_failed` + `TURN_COMPLETED`), or the session rejects every later message.
 - SDK sends (`sendState`, `sendText`, …) throw before `connect()` resolves; `SESSION_READY` is delivered from the HTTP session response, before the socket opens.

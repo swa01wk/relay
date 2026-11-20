@@ -110,7 +110,8 @@ Set in `infra/docker/.env` (or the gateway container's environment). The gateway
 | `RELAY_ENDPOINTING_SILENCE_MS`, `RELAY_DEEPGRAM_ENDPOINTING_MS`, `RELAY_UTTERANCE_COMMIT_DELAY_MS` | `400`, `500`, `350` | End-of-utterance timing |
 | `RELAY_STT_FINAL_ENDPOINT_MS` | `3000` | Ends the utterance this long after a recognizer final if the turn detector never reports the end of speech. Keep it above the Smart Turn wait, or sentences are cut at pauses |
 | `RELAY_STT_FINAL_WAIT_MS` | `1200` | How long a finished utterance waits for the final of words still being recognized before using their interim text |
-| `RELAY_SMART_TURN_STOP_SECS`, `RELAY_SMART_TURN_PRE_SPEECH_MS`, `RELAY_SMART_TURN_MAX_DURATION_SECS`, `RELAY_USER_TURN_STOP_TIMEOUT_SECS` | `2.0`, `500`, `8`, `8` | Smart Turn tuning |
+| `RELAY_SMART_TURN_STOP_SECS`, `RELAY_SMART_TURN_PRE_SPEECH_MS`, `RELAY_SMART_TURN_MAX_DURATION_SECS`, `RELAY_USER_TURN_STOP_TIMEOUT_SECS` | `2.0`, `500`, `8`, `3` | Smart Turn tuning. The last one ends a user turn this long after the last speech or words when nothing else did (e.g. a cough the recognizer returned no words for); keep it above `RELAY_SMART_TURN_STOP_SECS` |
+| `RELAY_VOICE_AUDIO_DUMP_DIR` | — | Debugging only: writes the exact microphone audio sent to speech recognition to `<dir>/<session_id>-<n>.wav` inside the gateway. Every call also logs `voice audio ingress … gaps=… max_gap_ms=…` (lost or late audio). Don't set it where callers' audio must not be stored |
 | `RELAY_PIPELINE_IDLE_TIMEOUT_SECS` | — | Stop an idle voice pipeline after N seconds |
 | **Testing only** | | |
 | `RELAY_INJECT_MODEL_TIMEOUT`, `RELAY_INJECT_STT_TIMEOUT`, `RELAY_INJECT_TTS_FAILURE`, `RELAY_INJECT_TRANSPORT_DISCONNECT`, `RELAY_INJECT_TOOL_TIMEOUT_SEC` | — | Fault injection for hardening tests; never set in production |
