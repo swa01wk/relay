@@ -124,7 +124,7 @@ export const examples: Example[] = [
   },
   {
     slug: "national-bank",
-    name: "Vasundhara National Bank",
+    name: "National Bank",
     industry: "Public-sector banking",
     tagline: "A government-style bank portal, made usable by asking.",
     description:

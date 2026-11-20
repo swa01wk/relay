@@ -3,7 +3,7 @@ import Link from "next/link"
 const SCROLLER = [
   "VNB never asks for your PIN, OTP, CVV or password over phone, SMS or e-mail. Any such call is from a fraudster.",
   "Re-KYC: customers whose KYC is due can submit a self-declaration through Internet Banking › e-Services › Re-KYC.",
-  "Vasundhara Utsav 444 days term deposit at 7.25% p.a. (senior citizens 7.75%) — valid till 31.03.2027.",
+  "Utsav 444 days term deposit at 7.25% p.a. (senior citizens 7.75%) — valid till 31.03.2027.",
   "Enrol in PMJJBY (₹436 p.a.) and PMSBY (₹20 p.a.) through Internet Banking › Government Schemes.",
   "Sukanya Samriddhi Yojana can be opened for a girl child below 10 years of age. Interest 8.2% p.a.",
   "Internet Banking will not be available on Sunday from 00:30 to 02:30 hrs due to scheduled maintenance.",
@@ -50,10 +50,10 @@ export function Footer() {
         ))}
       </div>
       <p className="mt-2 text-[#aaa]">
-        © Vasundhara National Bank. Site best viewed in Internet Explorer 11 / Chrome at 1024 × 768 resolution. Toll free: 1800 11 2244 · 1800 425 8899 (24×7).
+        © National Bank. Site best viewed in Internet Explorer 11 / Chrome at 1024 × 768 resolution. Toll free: 1800 11 2244 · 1800 425 8899 (24×7).
       </p>
       <p className="mt-1 text-[#aaa]">
-        Vasundhara National Bank is a made-up bank for a Relay demo — no real accounts, money or schemes. Rates and rules are illustrative.
+        National Bank is a made-up bank for a Relay demo — no real accounts, money or schemes. Rates and rules are illustrative.
       </p>
     </footer>
   )

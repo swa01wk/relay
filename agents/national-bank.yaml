@@ -1,4 +1,4 @@
-# VNB Sahayak — Vasundhara National Bank's assistant (a declarative Relay agent, no Python).
+# VNB Sahayak — National Bank's assistant (a declarative Relay agent, no Python).
 # Loaded by the gateway at startup from $RELAY_AGENTS_DIR. The bank portal connects with agentId "national-bank".
 agent_id: national-bank
 
@@ -21,7 +21,6 @@ tool_timeout_seconds: 30
 
 # Words speech recognition should listen for (max 100, 50 chars each).
 keyterms:
-  - Vasundhara
   - VNB
   - Sahayak
   - Hazratganj

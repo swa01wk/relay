@@ -16,7 +16,7 @@ export default async function InfoPage({ params }: { params: Promise<{ slug: str
       <p className="mt-3">
         <Link href="/home">« Back to Internet Banking</Link> · <Link href="/">Home</Link>
       </p>
-      <p className="gv-note mt-6">Vasundhara National Bank is a made-up bank in a Relay demo; this page stands in for the many sections such portals have.</p>
+      <p className="gv-note mt-6">National Bank is a made-up bank in a Relay demo; this page stands in for the many sections such portals have.</p>
     </div>
   )
 }

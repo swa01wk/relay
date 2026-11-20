@@ -39,7 +39,7 @@ from relay_adapter_realtime_pipecat.voice_pipeline import (
     append_voice_turn_processors,
     VoicePipelineHooks,
 )
-from relay_adapter_speech_deepgram import build_pipecat_stt_service
+from relay_adapter_realtime_pipecat.stt_selection import build_stt_service, stt_api_key_env, stt_provider
 from relay_adapter_speech_silero import build_turn_detector
 from relay_adapter_realtime_pipecat.webrtc_fixup import apply_small_webrtc_audio_fixup
 from relay_runtime.failure_injection import inject_transport_fail_connect
@@ -280,12 +280,14 @@ class PipecatSmallWebRtcTransport(RealtimeTransport):
             turn_detector = (
                 self.turn_detector_factory() if self.turn_detector_factory else build_turn_detector()
             )
-            stt = self.stt_factory() if self.stt_factory else build_pipecat_stt_service(
+            stt = self.stt_factory() if self.stt_factory else build_stt_service(
                 keyterms=self._keyterms_for(session_id)
             )
             if stt is None:
                 logger.warning(
-                    "voice pipeline without STT (DEEPGRAM_API_KEY missing) session_id=%s",
+                    "voice pipeline without STT (%s missing for RELAY_STT_PROVIDER=%s) session_id=%s",
+                    stt_api_key_env(),
+                    stt_provider(),
                     session_id,
                 )
             append_voice_turn_processors(

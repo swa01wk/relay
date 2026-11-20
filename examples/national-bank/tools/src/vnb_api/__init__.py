@@ -1,1 +1,1 @@
-"""Vasundhara National Bank: the net banking site's backend API and its Relay tools service."""
+"""National Bank: the net banking site's backend API and its Relay tools service."""

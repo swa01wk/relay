@@ -1,4 +1,4 @@
-"""Vasundhara National Bank's backend: the net banking site's API (``/api/…``) and the Relay tools the
+"""National Bank's backend: the net banking site's API (``/api/…``) and the Relay tools the
 assistant calls (``GET /tools``, ``POST /tools/{name}``). Both run the same ``logic`` functions.
 
 Who the customer is:
@@ -23,7 +23,7 @@ from vnb_api import logic, sandbox
 from vnb_api.relay_signature import relay_user, require_relay_signature
 from vnb_api.tools import TOOL_SPECS, call_tool, tool_manifest
 
-app = FastAPI(title="Vasundhara National Bank API + Relay tools", version="0.1.0")
+app = FastAPI(title="National Bank API + Relay tools", version="0.1.0")
 
 
 @contextmanager

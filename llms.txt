@@ -59,7 +59,7 @@ Key rules for code that integrates Relay:
 - [services/gateway/src/relay_gateway/services/auth_service.py](services/gateway/src/relay_gateway/services/auth_service.py) / [device_login_service.py](services/gateway/src/relay_gateway/services/device_login_service.py) / [project_service.py](services/gateway/src/relay_gateway/services/project_service.py): accounts, API keys (`rat_`/`rsk_`/`rpk_`), device login, projects; sessions start with `POST /v1/sessions` + a project key
 - [services/gateway/src/relay_gateway/services/rate_limit_service.py](services/gateway/src/relay_gateway/services/rate_limit_service.py): rate limits and login lockout (`429` + `Retry-After`); sign-up policy (`RELAY_SIGNUP`) and per-device CLI tokens that expire and need the password again for sensitive changes are in `auth_service.py`; email confirmation and password reset in `account_email_service.py` (SMTP via `RELAY_SMTP_HOST`, else printed to the gateway log)
 - [services/gateway/src/relay_gateway/services/project_agent_service.py](services/gateway/src/relay_gateway/services/project_agent_service.py) / [secret_service.py](services/gateway/src/relay_gateway/services/secret_service.py): per-project agents, runtimes (own tools URL + model key), SSRF check on tools URLs, encrypted secrets; signature verification example in [examples/sales-crm/tools/src/crm_tools_api/relay_signature.py](examples/sales-crm/tools/src/crm_tools_api/relay_signature.py)
-- [adapters/README.md](adapters/README.md): which adapter implements which port (Pipecat SmallWebRTC, OpenAI, Deepgram, Silero, Postgres, Redis, HTTP tools)
+- [adapters/README.md](adapters/README.md): which adapter implements which port (Pipecat SmallWebRTC, OpenAI, Deepgram, Cartesia + AssemblyAI STT, Silero, Postgres, Redis, HTTP tools)
 - [adapters/realtime/pipecat/ARCHITECTURE.md](adapters/realtime/pipecat/ARCHITECTURE.md): control plane vs media plane
 
 ## Reference example: Sales CRM (start here)
@@ -115,7 +115,7 @@ Key rules for code that integrates Relay:
 - [agents/banking.yaml](agents/banking.yaml): manifest, prompt and voice keyterms (products, payment modes, billers, payees, merchants)
 
 
-## Example: Vasundhara National Bank (national-bank, government-style portal, advice from the customer's numbers)
+## Example: National Bank (national-bank, government-style portal, advice from the customer's numbers)
 
 - [examples/national-bank/README.md](examples/national-bank/README.md): a deliberately cluttered public-sector bank portal (cryptic passbook narrations, dense rate tables, fine-print forms) where the assistant recommends loans, deposits and schemes from the customer's own salary, EMIs, CIBIL, age and family, explains charges, fills forms and proposes changes
 - [examples/national-bank/relay-tools.md](examples/national-bank/relay-tools.md): the inventory → 69 tools (34 read, 35 side-effecting), 3 screen actions, coverage table and 30 test questions

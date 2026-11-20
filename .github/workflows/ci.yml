@@ -20,7 +20,7 @@ jobs:
             -e adapters/models/openai -e adapters/agents/reference \
             -e adapters/tools/http \
             -e adapters/persistence/postgres -e adapters/persistence/redis \
-            -e adapters/speech/silero -e adapters/speech/deepgram \
+            -e adapters/speech/silero -e adapters/speech/deepgram -e adapters/speech/cartesia -e adapters/speech/assemblyai \
             -e adapters/observability/prometheus -e adapters/observability/otel \
             -e examples/mortgage-servicing/tools \
             -e examples/mortgage-servicing/agent \
@@ -36,7 +36,7 @@ jobs:
       - name: Protocol contract tests
         run: pytest packages/protocol/tests -q
       - name: Adapter realtime tests
-        run: pytest adapters/realtime/pipecat/tests -q
+        run: pytest adapters/realtime/pipecat/tests adapters/speech/cartesia/tests adapters/speech/assemblyai/tests -q
       - name: Observability adapter tests (Prometheus metrics, OpenTelemetry traces)
         run: pytest adapters/observability -q
       - name: Runtime tests

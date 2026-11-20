@@ -1,4 +1,4 @@
-"""The national bank example's tools service (Vasundhara National Bank): signed calls, per-customer data,
+"""The national bank example's tools service (National Bank): signed calls, per-customer data,
 sandboxes, the generated site API, and the rules behind the advice — loan eligibility and ranking,
 deposits and premature closure, beneficiaries' cooling period and limits, schemes, services, re-KYC."""
 
@@ -207,7 +207,7 @@ def test_national_bank_manifest_parses(monkeypatch):
     monkeypatch.setenv("RELAY_VNB_TOOLS_URL", "http://vnb-tools:8096")
     manifest = parse_manifest(REPO / "agents" / "national-bank.yaml")
     assert manifest.agent_id == "national-bank" and manifest.tools_url == "http://vnb-tools:8096"
-    assert "Vasundhara" in manifest.system_prompt and "PMJJBY" in manifest.keyterms
+    assert "National Bank" in manifest.system_prompt and "PMJJBY" in manifest.keyterms
 
 
 def test_opening_and_closing_accounts(vnb):

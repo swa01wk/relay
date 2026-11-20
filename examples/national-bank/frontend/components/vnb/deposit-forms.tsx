@@ -57,7 +57,7 @@ export function OpenFdForm() {
       <Row label="Deposit Scheme" required>
         <select name="scheme" value={values.scheme} onChange={change} className="gv-input">
           <option value="fd">e-TDR / e-STDR (Regular)</option>
-          <option value="special">Vasundhara Utsav 444 days</option>
+          <option value="special">Utsav 444 days</option>
           <option value="tax_saver">VNB Tax Saver (5 years, 80C)</option>
         </select>
       </Row>

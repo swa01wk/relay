@@ -9,7 +9,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
 export const metadata: Metadata = {
-  title: "Vasundhara National Bank — Internet Banking",
+  title: "National Bank — Internet Banking",
   description: "Example public-sector bank portal with a Relay voice and text banking assistant",
 }
 

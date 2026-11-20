@@ -7,7 +7,9 @@ dependencies = [
   "relay-runtime",
   "relay-adapter-speech-silero",
   "relay-adapter-speech-deepgram",
-  "pipecat-ai[webrtc,deepgram]>=1.11,<2",
+  "relay-adapter-speech-cartesia",
+  "relay-adapter-speech-assemblyai",
+  "pipecat-ai[webrtc,deepgram,cartesia,assemblyai]>=1.11,<2",
 ]
 
 [project.optional-dependencies]

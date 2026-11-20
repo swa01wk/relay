@@ -94,6 +94,13 @@ Set in `infra/docker/.env` (or the gateway container's environment). The gateway
 | `RELAY_TURN_URLS` | — | TURN server(s) for browsers, comma-separated (e.g. `turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp`). Needed when the gateway runs behind NAT (Docker, cloud firewalls): without it voice fails with "ICE failed" for many visitors |
 | `RELAY_TURN_SECRET` | — | coturn's `static-auth-secret`. The gateway gives each session's browser TURN credentials signed with it (`GET /sessions/{id}/webrtc/ice-servers`, TURN REST scheme: username `<expiry>:<session_id>`); the secret itself never leaves the gateway |
 | `RELAY_TURN_TTL_SECONDS` | `3600` | How long those TURN credentials work (minimum 60) |
+| `RELAY_STT_PROVIDER` | `deepgram` | Speech-to-text provider for voice sessions: `deepgram`, `cartesia` or `assemblyai`. Needs that provider's key (`DEEPGRAM_API_KEY` / `CARTESIA_API_KEY` / `ASSEMBLYAI_API_KEY`); without it voice runs with no recognition (logged). Text-to-speech stays on Deepgram |
+| `CARTESIA_API_KEY` | — | Cartesia key, used when `RELAY_STT_PROVIDER=cartesia` |
+| `CARTESIA_STT_MODEL` | `ink-whisper` | Cartesia recognition model. Key terms (manifest `keyterms`, `CARTESIA_STT_KEYTERMS`, else `DEEPGRAM_STT_KEYTERMS`) are sent only to `ink-2*` / `ink-preview*` models |
+| `CARTESIA_STT_LANGUAGE` | base of `DEEPGRAM_STT_LANGUAGE`, else `en` | ISO 639-1 code, e.g. `en`, `hi` (`en-IN` becomes `en`) |
+| `ASSEMBLYAI_API_KEY` | — | AssemblyAI key, used when `RELAY_STT_PROVIDER=assemblyai` |
+| `ASSEMBLYAI_STT_MODEL` | `universal-3-6-pro` | AssemblyAI streaming model, e.g. `assemblyai-stt-3-7-realtime`, `universal-streaming-english`, `universal-streaming-multilingual`. Key terms (manifest `keyterms`, `ASSEMBLYAI_STT_KEYTERMS`, else `DEEPGRAM_STT_KEYTERMS`) are sent as `keyterms_prompt`. Relay's turn detection decides when the user is done |
+| `ASSEMBLYAI_STT_LANGUAGE` | base of `DEEPGRAM_STT_LANGUAGE`, else `en` | e.g. `en`, `hi` |
 | `DEEPGRAM_STT_MODEL` | `nova-3-general` | Speech-to-text model. Use a nova-3 model: Flux models are not supported for recognition (logged and replaced by `nova-3-general`), and key terms need nova-3 |
 | `DEEPGRAM_STT_LANGUAGE` | `en` | Recognition language, e.g. `en-US`, `en-IN` (Indian English), `multi` (several languages in one sentence, e.g. Hindi + English) |
 | `DEEPGRAM_STT_KEYTERMS` | — | Comma-separated words every session should listen for, added after the session agent's own manifest `keyterms` (100 in total) |

@@ -1,4 +1,4 @@
-# Vasundhara National Bank — public-sector net banking example
+# National Bank — public-sector net banking example
 
 A made-up public-sector bank's internet banking portal, built to look and feel like the real ones in India: a link-farm landing
 page, a login page with captcha and a virtual keyboard, a maroon tab bar and an accordion menu tree, scrolling notices, a session

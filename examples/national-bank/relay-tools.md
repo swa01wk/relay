@@ -1,4 +1,4 @@
-# Vasundhara National Bank — Relay inventory and coverage
+# National Bank — Relay inventory and coverage
 
 Built by the workflow in the SDK's `AGENTS.md`: every page, write and entity of the portal mapped to a tool, a screen action, or
 an exclusion. Tools: `tools/src/vnb_api/tools.py` (one table → `GET /tools` and the site's `/api/<tool>`).

@@ -95,7 +95,7 @@ export default function Landing() {
         <div className="bg-gradient-to-br from-[#6e1423] to-[#a8324a] p-4 text-white">
           <div className="text-[11px] font-bold uppercase tracking-wider text-[#ffd76a]">Term deposit special</div>
           <div className="mt-1 text-[26px] font-bold leading-tight" style={{ fontFamily: "Georgia, serif" }}>
-            Vasundhara Utsav
+            Utsav
             <br />
             444 days @ 7.25%*
           </div>

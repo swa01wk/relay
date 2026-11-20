@@ -1,4 +1,4 @@
-"""Vasundhara National Bank's business logic — the one implementation behind both the net banking
+"""National Bank's business logic — the one implementation behind both the net banking
 site's API and the Relay tools.
 
 Every rule lives here once: the passbook-style statement and what its narrations mean, beneficiaries

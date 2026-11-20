@@ -1,4 +1,4 @@
-"""Vasundhara National Bank's demo data: one retail customer, the bank's product catalogue and rates.
+"""National Bank's demo data: one retail customer, the bank's product catalogue and rates.
 
 The bank, its people, IFSC prefixes and every rate here are made up for the demo. Rates and rules are
 modelled on how Indian public-sector banks publish theirs (slabs by tenure, senior-citizen extra, CIBIL
@@ -11,7 +11,7 @@ import random
 from datetime import date, timedelta
 from typing import Any
 
-BANK = "Vasundhara National Bank"
+BANK = "National Bank"
 IFSC_PREFIX = "VNBA0"
 GST = 0.18
 HISTORY_DAYS = 185
@@ -72,7 +72,7 @@ FD_SLABS: list[dict[str, Any]] = [
     {"label": "3 years to less than 5 years", "min_days": 1095, "max_days": 1824, "rate": 6.75},
     {"label": "5 years and up to 10 years", "min_days": 1825, "max_days": 3650, "rate": 6.50},
 ]
-SPECIAL_FD = {"name": "Vasundhara Utsav 444 days", "days": 444, "rate": 7.25, "valid_till": "2027-03-31"}
+SPECIAL_FD = {"name": "Utsav 444 days", "days": 444, "rate": 7.25, "valid_till": "2027-03-31"}
 SENIOR_EXTRA = 0.50
 TAX_SAVER = {"name": "VNB Tax Saver FD", "years": 5, "rate": 6.50, "max_per_year": 150000}
 SB_RATE = 2.70  # savings bank, % p.a., credited quarterly
@@ -120,7 +120,7 @@ GOLD_RATE_PER_GRAM_22K = 7450  # demo valuation used for gold loans
 # Retail loan catalogue. Rates are % p.a. by CIBIL band (>=800, 750–799, 700–749, below 700).
 LOAN_PRODUCTS: dict[str, dict[str, Any]] = {
     "home_loan": {
-        "name": "Vasundhara Griha Home Loan",
+        "name": "Griha Home Loan",
         "purposes": ["home_purchase", "home_construction"],
         "rates": [8.50, 8.65, 8.95, 9.65],
         "max_tenure_months": 360,
@@ -152,7 +152,7 @@ LOAN_PRODUCTS: dict[str, dict[str, Any]] = {
         "notes": ["Needs the house's title papers and a contractor's estimate"],
     },
     "car_loan": {
-        "name": "Vasundhara Vahan Car Loan",
+        "name": "Vahan Car Loan",
         "purposes": ["vehicle"],
         "rates": [9.15, 9.40, 9.90, 10.40],
         "max_tenure_months": 84,
@@ -305,7 +305,7 @@ def ppf_for(today: date) -> dict[str, Any]:
 
 def car_loan_for(today: date) -> dict[str, Any]:
     start = add_months(today, -38).replace(day=10)
-    return {"id": "LN-01", "product": "car_loan", "name": "Vasundhara Vahan Car Loan", "number": "40123451290",
+    return {"id": "LN-01", "product": "car_loan", "name": "Vahan Car Loan", "number": "40123451290",
             "sanctioned": CAR_LOAN["principal"], "rate": CAR_LOAN["rate"], "tenure_months": CAR_LOAN["months"], "emi": CAR_EMI, "start": start.isoformat(), "emi_day": 10,
             "vehicle": "Maruti Dzire VXi (UP32 KX 4471)", "status": "active", "emis_paid": 38}
 
@@ -400,7 +400,7 @@ ACCOUNT_PRODUCTS: dict[str, dict[str, Any]] = {
         "charges": "Nil", "rule": "Can't be held together with any other savings account at VNB (RBI rule)",
     },
     "regular": {
-        "name": "Vasundhara Savings Plus", "kind": "savings", "rate": 2.70, "minimum_balance": "Nil (no penalty for low balance)",
+        "name": "Savings Plus", "kind": "savings", "rate": 2.70, "minimum_balance": "Nil (no penalty for low balance)",
         "for": "Individuals; a second account for a goal or for a spouse's household expenses", "holder": ("self",),
         "features": ["Debit card (₹200 + GST a year)", "First 10 cheque leaves a year free", "Sweep into FD above ₹50,000 (optional)"],
         "charges": "SMS alerts ₹15 a quarter",
