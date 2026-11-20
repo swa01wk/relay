@@ -122,6 +122,25 @@ export const examples: Example[] = [
     highlights: ["Statement filtered on screen", "Spending charts", "Transfer form filled by voice", "Approved payments, card and FD changes"],
     modes: ["voice", "text"],
   },
+  {
+    slug: "national-bank",
+    name: "Vasundhara National Bank",
+    industry: "Public-sector banking",
+    tagline: "A government-style bank portal, made usable by asking.",
+    description:
+      "A deliberately crowded public-sector net banking portal: cryptic passbook narrations, long rate tables, forms full of fine print. The assistant works out what is best for the customer — which loan for a need (it spots that a loan against their FD beats a personal loan), where to save, which government schemes they qualify for — explains charges, fills the portal's forms and proposes transfers, deposits, re-KYC and service requests for approval.",
+    url: process.env.NEXT_PUBLIC_EXAMPLE_NATIONAL_BANK_URL ?? "http://localhost:3008",
+    prompts: [
+      "I need ₹2 lakh for my mother's surgery — which loan is best for me?",
+      "What is this ₹590 'DECLINED TXN CHGS' in my statement?",
+      "Where should I save ₹5,000 a month for 10 years? I have a 9-year-old daughter",
+      "Should I prepay my car loan or open another FD?",
+      "My KYC is overdue — sort it out",
+      "Send ₹14,000 rent to my house owner and order a cheque book",
+    ],
+    highlights: ["Loan and savings advice from the customer's own numbers", "Narrations and charges explained", "Portal forms filled by voice", "Approved transfers, deposits and requests"],
+    modes: ["voice", "text"],
+  },
 ]
 
 export function exampleBySlug(slug: string): Example | undefined {

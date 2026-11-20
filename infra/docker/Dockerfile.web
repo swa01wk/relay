@@ -6,6 +6,11 @@
 FROM node:22-slim AS build
 RUN corepack enable
 WORKDIR /repo
+# Download every package first, from the lockfile alone: this layer stays cached until
+# pnpm-lock.yaml changes, and all the web images share it (instead of each one downloading
+# everything again whenever any file in the repo changes).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm fetch --frozen-lockfile
 COPY . .
 
 ARG APP
@@ -18,6 +23,7 @@ ARG NEXT_PUBLIC_EXAMPLE_STOREFRONT_URL
 ARG NEXT_PUBLIC_EXAMPLE_BUS_BOOKING_URL
 ARG NEXT_PUBLIC_EXAMPLE_STAYS_URL
 ARG NEXT_PUBLIC_EXAMPLE_BANKING_URL
+ARG NEXT_PUBLIC_EXAMPLE_NATIONAL_BANK_URL
 ENV NEXT_TELEMETRY_DISABLED=1 \
     RELAY_NEXT_STANDALONE=1 \
     NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL} \
@@ -27,10 +33,11 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
     NEXT_PUBLIC_EXAMPLE_STOREFRONT_URL=${NEXT_PUBLIC_EXAMPLE_STOREFRONT_URL} \
     NEXT_PUBLIC_EXAMPLE_BUS_BOOKING_URL=${NEXT_PUBLIC_EXAMPLE_BUS_BOOKING_URL} \
     NEXT_PUBLIC_EXAMPLE_STAYS_URL=${NEXT_PUBLIC_EXAMPLE_STAYS_URL} \
-    NEXT_PUBLIC_EXAMPLE_BANKING_URL=${NEXT_PUBLIC_EXAMPLE_BANKING_URL}
+    NEXT_PUBLIC_EXAMPLE_BANKING_URL=${NEXT_PUBLIC_EXAMPLE_BANKING_URL} \
+    NEXT_PUBLIC_EXAMPLE_NATIONAL_BANK_URL=${NEXT_PUBLIC_EXAMPLE_NATIONAL_BANK_URL}
 
 # The app and the workspace packages it uses (the SDK builds itself on install).
-RUN pnpm install --frozen-lockfile --filter "${APP}..."
+RUN pnpm install --offline --frozen-lockfile --filter "${APP}..."
 RUN pnpm --filter "${APP}" build
 # A fresh clone has no empty public/ folder (git does not keep empty folders).
 RUN mkdir -p "${APP_DIR}/public"

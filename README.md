@@ -29,7 +29,7 @@ plans/                    PRD phases, status, decisions, UAT scripts
 
 ## Quick start
 
-**Ports:** gateway `8080` · mortgage tools `8090` · CRM tools `8091` · store API `8092` · bus booking API `8093` · rentals API `8094` · bank API `8095` · mortgage UI `3000` · CRM UI `3002` · website `3003` · storefront `3004` · bus booking `3005` · rentals `3006` · bank `3007`.
+**Ports:** gateway `8080` · mortgage tools `8090` · CRM tools `8091` · store API `8092` · bus booking API `8093` · rentals API `8094` · bank API `8095` · VNB bank API `8096` · mortgage UI `3000` · CRM UI `3002` · website `3003` · storefront `3004` · bus booking `3005` · rentals `3006` · bank `3007`.
 
 ```bash
 # 1. Server: gateway + Postgres + Redis + example tools services

@@ -22,6 +22,7 @@ Relay is a domain-agnostic platform for realtime voice + text AI assistants that
 | `examples/bus-booking/` | Bus booking example (Wayline): `frontend/` (Next.js 16 + shadcn, :3005), `tools/` (booking API + 32 tools, :8093) — agent is `agents/bus-booking.yaml`; trips are generated from schedules, seat map with the women-only seat rule; inventory in `relay-tools.md` | TS / Python |
 | `examples/stays/` | Vacation rental example (Roostly): `frontend/` (Next.js 16 + shadcn, :3006), `tools/` (site API + 31 tools, :8094) — agent is `agents/stays.yaml`; availability calendars, pricing with fees and GST, instant book vs. host requests, cancellation policies; inventory in `relay-tools.md` | TS / Python |
 | `examples/banking/` | Net banking example (Kestrel Bank): `frontend/` (Next.js 16 + shadcn, :3007), `tools/` (bank API + 39 tools, :8095) — agent is `agents/banking.yaml`; transfers with UPI/IMPS/NEFT limits and the new-payee cap, standing instructions, bills and autopay, card controls, credit card statements, FDs, disputes; inventory in `relay-tools.md` | TS / Python |
+| `examples/national-bank/` | Public-sector bank portal example (Vasundhara National Bank): `frontend/` (Next.js 16, deliberately government-style UI, :3008), `tools/` (bank API + 69 tools, :8096; the site API `/api/<tool>` is generated from the tool table) — agent is `agents/national-bank.yaml`; loan advice (`recommend_loans`: CIBIL bands, FOIR, age, LTV, loan against FD), account opening (savings / salary / minor / current), deposits and premature closure, bills with autopay, standing instructions, tax challans, mutual funds, NPS, lockers, nominees, Positive Pay, PPF/SSY/schemes, beneficiaries with 4-hour cooling, re-KYC, complaints; inventory in `relay-tools.md` | TS / Python |
 | `examples/shared/sandbox/` | `@relay/example-sandbox` — Experience Center helpers for example apps' servers (per-visitor session + reset) | TypeScript |
 | `apps/website/` | Marketing site + Experience Center (`/try`, iframes the examples in sandbox mode); gallery from `lib/examples.ts` — see [docs/experience-center.md](docs/experience-center.md) | TS |
 | `examples/mortgage-servicing/` | Custom Python agent example (deterministic routes, approve → commit → verify) | TS / Python |
@@ -33,7 +34,7 @@ Relay is a domain-agnostic platform for realtime voice + text AI assistants that
 
 ```bash
 cp infra/docker/.env.example infra/docker/.env        # set OPENAI_API_KEY (+ DEEPGRAM_API_KEY for voice)
-docker compose -f infra/docker/docker-compose.yml up -d --build   # gateway :8080, postgres, redis, mortgage-tools :8090, crm-tools :8091, shop-tools :8092, bus-tools :8093, stays-tools :8094, bank-tools :8095
+docker compose -f infra/docker/docker-compose.yml up -d --build   # gateway :8080, postgres, redis, mortgage-tools :8090, crm-tools :8091, shop-tools :8092, bus-tools :8093, stays-tools :8094, bank-tools :8095, vnb-tools :8096
 pnpm install
 pnpm --filter @relay/crm-frontend dev                 # http://localhost:3002
 pnpm --filter @relay/mortgage-frontend dev            # http://localhost:3000
@@ -41,6 +42,7 @@ pnpm --filter @relay/storefront-frontend dev          # http://localhost:3004
 pnpm --filter @relay/bus-frontend dev                 # http://localhost:3005
 pnpm --filter @relay/stays-frontend dev               # http://localhost:3006
 pnpm --filter @relay/banking-frontend dev             # http://localhost:3007
+pnpm --filter @relay/national-bank-frontend dev       # http://localhost:3008
 ```
 
 - Python code runs inside the images: after changing `runtime/`, `adapters/`, `services/gateway/` or `examples/*/tools`, rebuild (`up -d --build <service>`).
@@ -58,7 +60,7 @@ pip install -e "packages/protocol[dev]" -e packages/python-sdk -e runtime \
   -e adapters/realtime/pipecat -e adapters/models/openai -e adapters/agents/reference -e adapters/tools/http \
   -e adapters/persistence/postgres -e adapters/persistence/redis -e adapters/speech/silero -e adapters/speech/deepgram \
   -e adapters/observability/prometheus -e adapters/observability/otel \
-  -e examples/mortgage-servicing/tools -e examples/mortgage-servicing/agent -e examples/sales-crm/tools -e examples/storefront/tools -e examples/bus-booking/tools -e examples/stays/tools -e examples/banking/tools \
+  -e examples/mortgage-servicing/tools -e examples/mortgage-servicing/agent -e examples/sales-crm/tools -e examples/storefront/tools -e examples/bus-booking/tools -e examples/stays/tools -e examples/banking/tools -e examples/national-bank/tools \
   -e "services/gateway[dev]"
 ```
 
@@ -67,7 +69,7 @@ pip install -e "packages/protocol[dev]" -e packages/python-sdk -e runtime \
 ```bash
 pytest runtime/tests/test_<area>.py -q                 # e.g. test_client_actions, test_model_proposed_actions, test_generative_ui
 pytest services/gateway/tests/test_agent_manifests.py -q
-pytest services/gateway/tests/test_storefront_tools.py services/gateway/tests/test_bus_booking_tools.py services/gateway/tests/test_stays_tools.py services/gateway/tests/test_banking_tools.py services/gateway/tests/test_example_sandboxes.py -q   # example tools services
+pytest services/gateway/tests/test_storefront_tools.py services/gateway/tests/test_bus_booking_tools.py services/gateway/tests/test_stays_tools.py services/gateway/tests/test_banking_tools.py services/gateway/tests/test_national_bank_tools.py services/gateway/tests/test_example_sandboxes.py -q   # example tools services
 pnpm --filter @sumukhj1219-wkt-org/relay-web-sdk test && (cd packages/web-sdk && npx tsc --noEmit)
 pnpm --filter @sumukhj1219-wkt-org/relay-cli test
 (cd examples/sales-crm/frontend && pnpm exec tsc --noEmit -p . && pnpm exec eslint .)
@@ -75,12 +77,13 @@ pnpm --filter @sumukhj1219-wkt-org/relay-cli test
 (cd examples/bus-booking/frontend && pnpm exec tsc --noEmit -p . && pnpm exec eslint .)
 (cd examples/stays/frontend && pnpm exec tsc --noEmit -p . && pnpm exec eslint .)
 (cd examples/banking/frontend && pnpm exec tsc --noEmit -p . && pnpm exec eslint .)
+(cd examples/national-bank/frontend && pnpm exec tsc --noEmit -p . && pnpm exec eslint .)
 ```
 
 - Full Python suite (~30 s): `pytest packages/protocol/tests runtime/tests services/gateway/tests adapters/realtime/pipecat/tests adapters/speech/deepgram/tests adapters/observability -q`. Run it before finishing a large change, not after every edit.
 - Do not start Playwright suites unless asked (slow; needs the full stack).
 - Test the agent loop with a scripted `ModelProvider` (yield `{"type": "tool_calls", ...}` / `{"type": "token", ...}`), never the real API. Examples: `runtime/tests/test_model_proposed_actions.py`, `runtime/tests/test_client_actions.py`.
-- Gateway tests start with empty rate-limit counters (autouse fixture in `conftest.py`); a test that needs many sign-ups from one address must expect `429` or reuse one `relay login` start. Gateway tests for the customer path use the `tenant_world` fixture (`conftest.py`): in-process fakes for customers' tools services and the model API. Gateway tests set `RELAY_DEV_SESSIONS=1`, `RELAY_AGENTS_DIR` to a non-existent folder and `CRM_DB_PATH` / `SHOP_DB_PATH` / `BUS_DB_PATH` / `STAYS_DB_PATH` / `BANK_DB_PATH` to temp files (`services/gateway/tests/conftest.py`) so startup never calls real tools services and tests never write a `crm.db` / `shop.db` / `bus.db` / `stays.db` / `bank.db` into the repo.
+- Gateway tests start with empty rate-limit counters (autouse fixture in `conftest.py`); a test that needs many sign-ups from one address must expect `429` or reuse one `relay login` start. Gateway tests for the customer path use the `tenant_world` fixture (`conftest.py`): in-process fakes for customers' tools services and the model API. Gateway tests set `RELAY_DEV_SESSIONS=1`, `RELAY_AGENTS_DIR` to a non-existent folder and `CRM_DB_PATH` / `SHOP_DB_PATH` / `BUS_DB_PATH` / `STAYS_DB_PATH` / `BANK_DB_PATH` / `VNB_DB_PATH` to temp files (`services/gateway/tests/conftest.py`) so startup never calls real tools services and tests never write a `crm.db` / `shop.db` / `bus.db` / `stays.db` / `bank.db` / `vnb.db` into the repo.
 
 ## Architecture rules (CI and reviews enforce these)
 

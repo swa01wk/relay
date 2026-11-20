@@ -114,6 +114,14 @@ Key rules for code that integrates Relay:
 - [examples/banking/frontend](examples/banking/frontend): Next.js 16 on :3007 — `FILTER_TRANSACTIONS` / `OPEN_ACCOUNT` / `OPEN_TRANSACTION` / `OPEN_CARD` / `START_TRANSFER` / `SHOW_INSIGHTS` ([components/bank/bank-actions.tsx](examples/banking/frontend/components/bank/bank-actions.tsx)), a Send money page form named like `transfer_money` with a live limit check ([components/bank/transfer-form.tsx](examples/banking/frontend/components/bank/transfer-form.tsx))
 - [agents/banking.yaml](agents/banking.yaml): manifest, prompt and voice keyterms (products, payment modes, billers, payees, merchants)
 
+
+## Example: Vasundhara National Bank (national-bank, government-style portal, advice from the customer's numbers)
+
+- [examples/national-bank/README.md](examples/national-bank/README.md): a deliberately cluttered public-sector bank portal (cryptic passbook narrations, dense rate tables, fine-print forms) where the assistant recommends loans, deposits and schemes from the customer's own salary, EMIs, CIBIL, age and family, explains charges, fills forms and proposes changes
+- [examples/national-bank/relay-tools.md](examples/national-bank/relay-tools.md): the inventory → 69 tools (34 read, 35 side-effecting), 3 screen actions, coverage table and 30 test questions
+- [examples/national-bank/tools/src/vnb_api/logic.py](examples/national-bank/tools/src/vnb_api/logic.py): every rule once (with `payments.py`, `products.py`, `servicing.py`) — `recommend_loans` (eligibility by FOIR, age at the end, LTV, security; ranked by yearly cost), deposits, schemes, transfers, services; the site API `/api/<tool>` is generated from the same tool table
+- [examples/national-bank/frontend](examples/national-bank/frontend): Next.js 16 on :3008 — `SHOW_STATEMENT` / `START_TRANSFER` / `SHOW_LOAN_PRODUCT` ([components/vnb/bank-actions.tsx](examples/national-bank/frontend/components/vnb/bank-actions.tsx)), forms named like their tools ([components/vnb/tool-form.tsx](examples/national-bank/frontend/components/vnb/tool-form.tsx))
+- [agents/national-bank.yaml](agents/national-bank.yaml): manifest, adviser prompt and voice keyterms (products, schemes, payment modes, family and beneficiaries)
 ## Website and Experience Center
 
 - [apps/website](apps/website): marketing site + Experience Center (`/try`, Next.js 16, :3003); the example gallery comes only from [lib/examples.ts](apps/website/lib/examples.ts)

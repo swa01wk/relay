@@ -39,13 +39,14 @@ mode is off.
 ## Run it locally
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml up -d --build gateway crm-tools shop-tools bus-tools stays-tools bank-tools
+docker compose -f infra/docker/docker-compose.yml up -d --build gateway crm-tools shop-tools bus-tools stays-tools bank-tools vnb-tools
 pnpm install
 pnpm --filter @relay/crm-frontend dev:sandbox        # :3002, sandbox mode, framable by :3003
 pnpm --filter @relay/storefront-frontend dev:sandbox # :3004
 pnpm --filter @relay/bus-frontend dev:sandbox        # :3005
 pnpm --filter @relay/stays-frontend dev:sandbox      # :3006
 pnpm --filter @relay/banking-frontend dev:sandbox    # :3007
+pnpm --filter @relay/national-bank-frontend dev:sandbox   # :3008
 pnpm --filter @relay/website dev                     # http://localhost:3003 → Experience Center
 ```
 
@@ -62,7 +63,7 @@ Locally the example apps use dev sessions (`RELAY_DEV_SESSIONS=1`, which accept 
 | example app | `RELAY_SANDBOX_FRAME_ANCESTORS` | Origins allowed to frame the app (`frame-ancestors`), e.g. the website's origin |
 | example app | `CRM_TOOLS_URL` / `MORTGAGE_TOOLS_URL` | Tools service, for reset (and the CRM dashboard) |
 | tools service | `CRM_SANDBOX_DIR` / `MORTGAGE_SANDBOXES=1` / `SHOP_SANDBOX_DIR` / `BUS_SANDBOX_DIR` / `STAYS_SANDBOX_DIR` / `BANK_SANDBOX_DIR` | Turns per-visitor data on |
-| website | `NEXT_PUBLIC_EXAMPLE_SALES_CRM_URL`, `NEXT_PUBLIC_EXAMPLE_STOREFRONT_URL`, `NEXT_PUBLIC_EXAMPLE_BUS_BOOKING_URL`, `NEXT_PUBLIC_EXAMPLE_STAYS_URL`, `NEXT_PUBLIC_EXAMPLE_BANKING_URL` | Where each example runs |
+| website | `NEXT_PUBLIC_EXAMPLE_SALES_CRM_URL`, `NEXT_PUBLIC_EXAMPLE_STOREFRONT_URL`, `NEXT_PUBLIC_EXAMPLE_BUS_BOOKING_URL`, `NEXT_PUBLIC_EXAMPLE_STAYS_URL`, `NEXT_PUBLIC_EXAMPLE_BANKING_URL`, `NEXT_PUBLIC_EXAMPLE_NATIONAL_BANK_URL` | Where each example runs |
 
 Abuse and cost limits: the example's server allows 20 session starts per address per 10 minutes
 (behind a proxy it reads `X-Forwarded-For`, so put it behind one that sets that header); the gateway

@@ -100,7 +100,9 @@ Set in `infra/docker/.env` (or the gateway container's environment). The gateway
 | `DEEPGRAM_TTS_MODEL` / `DEEPGRAM_TTS_ENCODING` / `DEEPGRAM_TTS_SAMPLE_RATE` | `flux-haley-en` / `linear16` / `24000` | Text-to-speech voice and audio format |
 | `RELAY_TURN_DETECTOR` | `hybrid` | `hybrid` (Silero start + Smart Turn stop) or `silero` |
 | `RELAY_VAD_MIN_VOLUME` | `0.35` | Voice activity threshold (raise if speaker echo triggers interruptions) |
-| `RELAY_ENDPOINTING_SILENCE_MS`, `RELAY_DEEPGRAM_ENDPOINTING_MS`, `RELAY_STT_FINAL_ENDPOINT_MS`, `RELAY_UTTERANCE_COMMIT_DELAY_MS` | `400`, `500`, `500`, `350` | End-of-utterance timing |
+| `RELAY_ENDPOINTING_SILENCE_MS`, `RELAY_DEEPGRAM_ENDPOINTING_MS`, `RELAY_UTTERANCE_COMMIT_DELAY_MS` | `400`, `500`, `350` | End-of-utterance timing |
+| `RELAY_STT_FINAL_ENDPOINT_MS` | `3000` | Ends the utterance this long after a recognizer final if the turn detector never reports the end of speech. Keep it above the Smart Turn wait, or sentences are cut at pauses |
+| `RELAY_STT_FINAL_WAIT_MS` | `1200` | How long a finished utterance waits for the final of words still being recognized before using their interim text |
 | `RELAY_SMART_TURN_STOP_SECS`, `RELAY_SMART_TURN_PRE_SPEECH_MS`, `RELAY_SMART_TURN_MAX_DURATION_SECS`, `RELAY_USER_TURN_STOP_TIMEOUT_SECS` | `2.0`, `500`, `8`, `8` | Smart Turn tuning |
 | `RELAY_PIPELINE_IDLE_TIMEOUT_SECS` | — | Stop an idle voice pipeline after N seconds |
 | **Testing only** | | |

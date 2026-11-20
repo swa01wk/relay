@@ -45,6 +45,7 @@ services:
       - bus-web
       - stays-web
       - bank-web
+      - vnb-web
 
   # TURN relay for voice: browsers send audio here when they cannot reach the gateway directly
   # (it is behind Docker's NAT). Host networking so it sees the server's public address. It may only
@@ -171,6 +172,20 @@ services:
       <<: *tools-health
       test: ["CMD", "curl", "-f", "http://localhost:8095/health"]
 
+  vnb-tools:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.vnb-tools
+    environment:
+      VNB_DB_PATH: /data/vnb.db
+      VNB_SANDBOX_DIR: /data/sandboxes
+    volumes:
+      - vnb-data:/data
+    healthcheck:
+      <<: *tools-health
+      test: ["CMD", "curl", "-f", "http://localhost:8096/health"]
+
   # --- Gateway ---
 
   gateway:
@@ -198,6 +213,7 @@ services:
       RELAY_BUS_TOOLS_URL: http://bus-tools:8093
       RELAY_STAYS_TOOLS_URL: http://stays-tools:8094
       RELAY_BANK_TOOLS_URL: http://bank-tools:8095
+      RELAY_VNB_TOOLS_URL: http://vnb-tools:8096
       RELAY_AGENTS_DIR: /app/agents
       RELAY_LOG_FORMAT: json
       # Voice: browsers get TURN credentials for coturn above (see GET /sessions/{id}/webrtc/ice-servers).
@@ -224,6 +240,8 @@ services:
         condition: service_healthy
       bank-tools:
         condition: service_healthy
+      vnb-tools:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
@@ -246,6 +264,7 @@ services:
         NEXT_PUBLIC_EXAMPLE_BUS_BOOKING_URL: https://bus.${DOMAIN}
         NEXT_PUBLIC_EXAMPLE_STAYS_URL: https://stays.${DOMAIN}
         NEXT_PUBLIC_EXAMPLE_BANKING_URL: https://bank.${DOMAIN}
+        NEXT_PUBLIC_EXAMPLE_NATIONAL_BANK_URL: https://vnb.${DOMAIN}
 
   crm-web:
     <<: *restart
@@ -317,11 +336,28 @@ services:
       BANK_API_URL: http://bank-tools:8095
     depends_on: [gateway]
 
+  vnb-web:
+    <<: *restart
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        <<: *web-build-args
+        APP: "@relay/national-bank-frontend"
+        APP_DIR: examples/national-bank/frontend
+    environment:
+      <<: *web-env
+      VNB_API_URL: http://vnb-tools:8096
+    depends_on: [gateway]
+
 networks:
   default:
     ipam:
       config:
         - subnet: 172.31.240.0/24
+          # Containers get automatic addresses only from .128–.255, so none can take the gateway's
+          # fixed 172.31.240.10 (which coturn relays to) while the gateway is being recreated.
+          ip_range: 172.31.240.128/25
 
 volumes:
   caddy-data:
@@ -332,3 +368,4 @@ volumes:
   bus-data:
   stays-data:
   bank-data:
+  vnb-data:

@@ -56,3 +56,8 @@ bank.{$DOMAIN} {
 	import common
 	reverse_proxy bank-web:3000
 }
+
+vnb.{$DOMAIN} {
+	import common
+	reverse_proxy vnb-web:3000
+}

@@ -9,7 +9,7 @@ certificates it gets from Let's Encrypt.
 |---|---|---|
 | `https://<DOMAIN>` | `website` | Marketing site + Experience Center (`/try`); `www.` redirects here |
 | `https://api.<DOMAIN>` | `gateway` | API, `relay login`, session WebSocket, voice, `/admin`, `/metrics` |
-| `https://crm.<DOMAIN>`, `shop.`, `bus.`, `stays.`, `bank.` | `crm-web`, `shop-web`, `bus-web`, `stays-web`, `bank-web` | Example apps in sandbox mode, shown in the website's iframes |
+| `https://crm.<DOMAIN>`, `shop.`, `bus.`, `stays.`, `bank.`, `vnb.` | `crm-web`, `shop-web`, `bus-web`, `stays-web`, `bank-web`, `vnb-web` | Example apps in sandbox mode, shown in the website's iframes |
 | — | `postgres`, `redis`, `*-tools` | Internal only, no ports on the server |
 
 Files: `infra/docker/docker-compose.prod.yml`, `infra/docker/Caddyfile`,
@@ -92,7 +92,20 @@ git pull
 infra/docker/prod.sh up -d --build
 ```
 
-Only images whose files changed are rebuilt. When an update changes the stack's network (as the
+That rebuilds every web app: each web image is built from the whole repository, so any change makes
+all six run `next build` again, at the same time (slow on 4 vCPUs / 8 GB). Packages are downloaded
+once and cached until `pnpm-lock.yaml` changes. When you know what changed, build only that and
+start everything:
+
+```bash
+git pull
+infra/docker/prod.sh build bank-tools bank-web website   # e.g. after a change to the banking example
+infra/docker/prod.sh up -d
+```
+
+Web app → service: `website` (`apps/website`), `crm-web`, `shop-web`, `bus-web`, `stays-web`,
+`bank-web` (`examples/*/frontend`); a tools service → its `*-tools`; `runtime/`, `adapters/`,
+`services/gateway/` → `gateway`. When an update changes the stack's network (as the
 TURN relay did), run `infra/docker/prod.sh down` before `up -d --build`; data volumes are kept. After changing `DOMAIN` rebuild everything (the web apps
 compile their addresses in). After editing `agents/*.yaml` run `infra/docker/prod.sh restart gateway`.
 

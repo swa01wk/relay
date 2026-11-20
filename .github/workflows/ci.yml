@@ -25,7 +25,7 @@ jobs:
             -e examples/mortgage-servicing/tools \
             -e examples/mortgage-servicing/agent \
             -e examples/sales-crm/tools \
-            -e examples/storefront/tools -e examples/bus-booking/tools -e examples/stays/tools -e examples/banking/tools \
+            -e examples/storefront/tools -e examples/bus-booking/tools -e examples/stays/tools -e examples/banking/tools -e examples/national-bank/tools \
             -e "services/gateway[dev]"
       - name: Ruff (syntax / import order via compileall)
         run: python -m compileall packages/protocol runtime services/gateway
