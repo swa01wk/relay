@@ -9,6 +9,8 @@ WORKDIR /app
 COPY adapters/realtime/pipecat /app/adapters/realtime/pipecat
 COPY adapters/speech/silero /app/adapters/speech/silero
 COPY adapters/speech/deepgram /app/adapters/speech/deepgram
+COPY adapters/speech/cartesia /app/adapters/speech/cartesia
+COPY adapters/speech/assemblyai /app/adapters/speech/assemblyai
 COPY adapters/models/openai /app/adapters/models/openai
 COPY adapters/agents/reference /app/adapters/agents/reference
 COPY adapters/tools/http /app/adapters/tools/http
@@ -30,6 +32,8 @@ RUN pip install --no-cache-dir \
     -e /app/adapters/realtime/pipecat \
     -e /app/adapters/speech/silero \
     -e /app/adapters/speech/deepgram \
+    -e /app/adapters/speech/cartesia \
+    -e /app/adapters/speech/assemblyai \
     -e /app/adapters/models/openai \
     -e /app/adapters/agents/reference \
     -e /app/adapters/tools/http \

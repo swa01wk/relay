@@ -37,11 +37,6 @@ crm.{$DOMAIN} {
 	reverse_proxy crm-web:3000
 }
 
-mortgage.{$DOMAIN} {
-	import common
-	reverse_proxy mortgage-web:3000
-}
-
 shop.{$DOMAIN} {
 	import common
 	reverse_proxy shop-web:3000
@@ -55,4 +50,14 @@ bus.{$DOMAIN} {
 stays.{$DOMAIN} {
 	import common
 	reverse_proxy stays-web:3000
+}
+
+bank.{$DOMAIN} {
+	import common
+	reverse_proxy bank-web:3000
+}
+
+vnb.{$DOMAIN} {
+	import common
+	reverse_proxy vnb-web:3000
 }
